@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>教室设备管理</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <section id="loginView" class="loginView">
+      <form id="loginForm" class="loginPanel">
+        <p class="eyebrow">TeachingRoom Control</p>
+        <h1>教室设备管理</h1>
+        <label>
+          <span>账号</span>
+          <input id="usernameInput" autocomplete="username" required />
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="passwordInput" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="primary" type="submit">登录</button>
+      </form>
+    </section>
+
+    <section id="appView" class="appView" hidden>
+      <header class="topbar">
+        <div class="topbarInner">
+          <div>
+            <p class="eyebrow">Classroom Equipment</p>
+            <h1>教室设备管理</h1>
+          </div>
+          <div class="status">
+            <span id="networkStatus" class="networkStatus" role="status" aria-live="polite">正在连接</span>
+            <span id="userLabel">未登录</span>
+            <span id="roleLabel">角色</span>
+            <button id="passwordButton" type="button">修改密码</button>
+            <button id="auditButton" type="button">操作记录</button>
+            <button id="backupButton" type="button">数据库备份</button>
+            <button id="userButton" type="button">用户管理</button>
+            <button id="logoutButton" type="button">退出</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="toolbar" aria-label="筛选和操作">
+          <div class="searchbox">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="搜索门牌、班级、设备、录播、监控" />
+          </div>
+          <select id="buildingFilter" aria-label="楼栋"></select>
+          <select id="departmentFilter" aria-label="级部"></select>
+          <select id="plannedFilter" aria-label="更新项目">
+            <option value="">全部项目</option>
+            <option value="yes">有任一更新</option>
+            <option value="screen">屏幕</option>
+            <option value="board">书写板</option>
+            <option value="audio">教师扩声</option>
+            <option value="recording">录播</option>
+            <option value="no">无更新项目</option>
+          </select>
+          <select id="pendingFilter" aria-label="审核状态">
+            <option value="">全部审核</option>
+            <option value="yes">待审核</option>
+          </select>
+          <button id="exportButton" class="primary" type="button">导出 Excel</button>
+          <button id="uploadButton" type="button">上传 Excel</button>
+          <button id="addClassroomButton" type="button">新增教室</button>
+          <input id="uploadInput" type="file" accept=".xlsx,.xls" hidden />
+        </section>
+
+        <section class="summary" aria-label="统计">
+          <div>
+            <strong id="totalCount">0</strong>
+            <span>当前教室</span>
+          </div>
+          <div>
+            <strong id="plannedCount">0</strong>
+            <span id="plannedLabel">涉及更新</span>
+            <small id="plannedBreakdown">屏幕0 / 书写板0 / 教师扩声0 / 录播0</small>
+          </div>
+          <div>
+            <strong id="pendingCount">0</strong>
+            <span>待审核</span>
+          </div>
+          <div>
+            <strong id="buildingCount">0</strong>
+            <span>楼栋分布</span>
+          </div>
+        </section>
+
+        <section class="workbench">
+          <section class="tableShell">
+            <table>
+              <thead>
+                <tr>
+                  <th>门牌</th>
+                  <th>班级/用途</th>
+                  <th>级部</th>
+                  <th>现有屏幕</th>
+                  <th>书写板</th>
+                  <th>教师扩声</th>
+                  <th>录播</th>
+                  <th>监控</th>
+                  <th>安装日期</th>
+                  <th>暑期计划</th>
+                  <th>备注</th>
+                  <th>审核</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="classroomRows"></tbody>
+            </table>
+            <div id="emptyState" class="empty">没有匹配的教室</div>
+          </section>
+
+          <section class="cardList" id="cardList" aria-label="移动端教室列表"></section>
+        </section>
+
+        <section class="reviewPanel">
+          <header>
+            <h2>待审核变更</h2>
+            <button id="refreshReviewsButton" type="button">刷新</button>
+          </header>
+          <div id="reviewList" class="reviewList"></div>
+        </section>
+      </main>
+    </section>
+
+    <dialog id="editDialog">
+      <form id="editForm" method="dialog">
+        <header>
+          <h2 id="editTitle">提交变更</h2>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div id="editFields" class="formGrid"></div>
+        <section id="photoPanel" class="photoPanel">
+          <header>
+            <div>
+              <h3>巡查照片</h3>
+              <p class="muted">照片变更需由其他管理员审核通过后生效</p>
+            </div>
+            <button id="photoUploadButton" type="button">上传照片</button>
+            <input id="photoInput" type="file" accept="image/*" hidden />
+          </header>
+          <div id="photoList" class="photoList"></div>
+        </section>
+        <label>
+          <span>变更说明</span>
+          <textarea id="reasonInput" rows="3" placeholder="例如：现场巡查发现设备型号或计划状态有变化"></textarea>
+        </label>
+        <footer>
+          <button value="cancel" type="submit" formnovalidate>取消</button>
+          <button id="submitChangeButton" class="primary" type="button">提交审核</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="noteDialog">
+      <form id="noteForm" method="dialog">
+        <header>
+          <div>
+            <h2 id="noteTitle">备注信息</h2>
+            <p class="muted">查看巡查备注和照片</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <section class="noteViewer">
+          <h3>巡查备注</h3>
+          <div id="noteBody" class="noteBody"></div>
+          <h3>巡查照片</h3>
+          <div id="notePhotoList" class="photoList"></div>
+        </section>
+        <footer>
+          <button value="cancel" type="submit" formnovalidate>关闭</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="createClassroomDialog">
+      <form id="createClassroomForm" method="dialog">
+        <header>
+          <div>
+            <h2>新增教室记录</h2>
+            <p class="muted">管理员可新增底层教室数据</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div id="createClassroomFields" class="formGrid"></div>
+        <footer>
+          <button value="cancel" type="submit" formnovalidate>取消</button>
+          <button id="submitCreateClassroomButton" class="primary" type="button">保存记录</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="passwordDialog">
+      <form id="passwordForm" class="passwordForm" method="dialog">
+        <header>
+          <div>
+            <h2>修改密码</h2>
+            <p class="muted">需要先输入当前密码</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <label>
+          <span>当前密码</span>
+          <input id="currentPasswordInput" type="password" autocomplete="current-password" />
+        </label>
+        <label>
+          <span>新密码</span>
+          <input id="selfNewPasswordInput" type="password" autocomplete="new-password" placeholder="至少 6 位" />
+        </label>
+        <label>
+          <span>确认新密码</span>
+          <input id="confirmNewPasswordInput" type="password" autocomplete="new-password" />
+        </label>
+        <footer>
+          <button value="cancel" type="submit" formnovalidate>取消</button>
+          <button id="submitPasswordButton" class="primary" type="button">保存新密码</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="userDialog">
+      <form id="userForm" class="userManageForm" method="dialog">
+        <header>
+          <div>
+            <h2>用户管理</h2>
+            <p class="muted">仅超级管理员 admin 可操作</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div class="userManageGrid">
+          <section class="userCreatePanel">
+            <h3>新增用户</h3>
+            <label>
+              <span>账号</span>
+              <input id="newUsernameInput" autocomplete="off" placeholder="例如 zhangsan" />
+            </label>
+            <label>
+              <span>姓名</span>
+              <input id="newDisplayNameInput" autocomplete="off" placeholder="例如 张三" />
+            </label>
+            <label>
+              <span>角色</span>
+              <select id="newRoleInput">
+                <option value="inspector">巡查员</option>
+                <option value="admin">管理员</option>
+              </select>
+            </label>
+            <label>
+              <span>初始密码</span>
+              <input id="newPasswordInput" type="password" autocomplete="new-password" placeholder="至少 6 位" />
+            </label>
+            <button id="createUserButton" class="primary" type="button">新增用户</button>
+          </section>
+
+          <section class="userListPanel">
+            <header>
+              <h3>已有用户</h3>
+              <button id="refreshUsersButton" type="button">刷新</button>
+            </header>
+            <div class="userTableWrap">
+              <table class="userTable">
+                <thead>
+                  <tr>
+                    <th>账号</th>
+                    <th>姓名</th>
+                    <th>角色</th>
+                    <th>状态</th>
+                    <th>使用记录</th>
+                    <th>重置密码</th>
+                    <th>信息操作</th>
+                  </tr>
+                </thead>
+                <tbody id="userRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="auditDialog">
+      <form id="auditForm" class="auditForm" method="dialog">
+        <header>
+          <div>
+            <h2>操作记录</h2>
+            <p class="muted">可按用户、房间、操作类型和关键字筛选</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <section class="auditToolbar" aria-label="操作记录筛选">
+          <div class="searchbox">
+            <span aria-hidden="true">⌕</span>
+            <input id="auditSearchInput" type="search" placeholder="搜索用户、门牌、房间、字段、内容" />
+          </div>
+          <select id="auditActionFilter" aria-label="操作类型">
+            <option value="">全部操作</option>
+            <option value="create_classroom">新增教室</option>
+            <option value="submit_create_classroom">提交新增教室</option>
+            <option value="submit_change_request">提交变更</option>
+            <option value="review_approved">审核通过</option>
+            <option value="review_rejected">审核拒绝</option>
+            <option value="review_create_approved">新增审核通过</option>
+            <option value="review_create_rejected">新增审核拒绝</option>
+            <option value="submit_photo_upload">提交照片上传</option>
+            <option value="submit_photo_delete">提交照片删除</option>
+            <option value="review_photo_upload_approved">照片上传审核通过</option>
+            <option value="review_photo_upload_rejected">照片上传审核拒绝</option>
+            <option value="review_photo_delete_approved">照片删除审核通过</option>
+            <option value="review_photo_delete_rejected">照片删除审核拒绝</option>
+            <option value="rollback_change_request">撤销修改</option>
+            <option value="rollback_to_before">整体还原</option>
+            <option value="rollback_timeline_single">撤销时间线操作</option>
+            <option value="rollback_timeline_to_before">整体时间线还原</option>
+            <option value="create_database_backup">创建数据库备份</option>
+            <option value="restore_database_backup">启用数据库备份</option>
+            <option value="upload_excel_review">Excel 上传</option>
+            <option value="export_excel">导出 Excel</option>
+            <option value="bulk_mark_standard_exam_room">批量标注标准化考场</option>
+            <option value="bulk_set_monitoring_for_standard_exam_room">批量设置标准化考场监控</option>
+            <option value="create_user">新增用户</option>
+            <option value="update_user">修改用户</option>
+            <option value="change_own_password">修改自己密码</option>
+            <option value="reset_user_password">重置密码</option>
+            <option value="delete_user">删除用户</option>
+            <option value="login">登录</option>
+            <option value="logout">退出</option>
+          </select>
+          <select id="auditActorFilter" aria-label="操作用户"></select>
+          <button id="refreshAuditButton" type="button">刷新</button>
+        </section>
+        <div class="auditList" id="auditList"></div>
+        <footer class="auditPager">
+          <span id="auditCountLabel">0 条记录</span>
+          <button id="auditMoreButton" type="button" hidden>加载更多</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="backupDialog">
+      <form id="backupForm" class="backupForm" method="dialog">
+        <header>
+          <div>
+            <h2>数据库备份</h2>
+            <p class="muted">自动备份、下载到本地，或上传数据库文件并启用</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <section class="backupToolbar" aria-label="数据库备份操作">
+          <button id="createBackupButton" type="button">立即备份</button>
+          <button id="uploadBackupButton" type="button">上传并启用</button>
+          <input id="backupUploadInput" type="file" accept=".sqlite,.db,.sqlite3,application/vnd.sqlite3,application/octet-stream" hidden />
+          <button id="refreshBackupsButton" type="button">刷新</button>
+        </section>
+        <div class="backupNotice">
+          上传启用前，系统会先校验数据库文件，并自动保留一份当前数据库备份。
+        </div>
+        <p id="backupPolicy" class="muted"></p>
+        <div class="backupList" id="backupList"></div>
+      </form>
+    </dialog>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

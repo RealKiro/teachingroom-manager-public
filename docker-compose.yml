@@ -1,0 +1,19 @@
+services:
+  teachingroom:
+    build: .
+    container_name: teachingroom-manager
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - SESSION_SECRET=${SESSION_SECRET:?Set SESSION_SECRET before starting}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - DB_PATH=/app/data/teachingroom.sqlite
+      - AUTO_BACKUP_KEEP=200
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - ./uploads:/app/uploads
+      - ./exports:/app/exports
+      - ./初始化数据表格（虚拟）.xlsx:/app/初始化数据表格（虚拟）.xlsx:ro
+    restart: unless-stopped
