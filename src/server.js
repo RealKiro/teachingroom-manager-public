@@ -235,7 +235,7 @@ app.get("/api/classrooms/:id/photos", requireLogin, async (req, res) => {
   const classroom = await adapter.prepare("SELECT id FROM classrooms WHERE id = ?").get(classroomId);
   if (!classroom) return res.status(404).json({ error: "教室不存在" });
 
-  const photos = await adapter.prepare(`
+  const photosData = await adapter.prepare(`
     SELECT p.id, p.classroom_id AS classroomId, p.uploader_id AS uploaderId, p.original_name AS originalName,
            p.mime_type AS mimeType, p.size, p.created_at AS createdAt,
            u.username AS uploaderUsername, u.display_name AS uploaderName
@@ -243,21 +243,23 @@ app.get("/api/classrooms/:id/photos", requireLogin, async (req, res) => {
     LEFT JOIN users u ON u.id = p.uploader_id
     WHERE p.classroom_id = ? AND p.deleted_at IS NULL
     ORDER BY p.created_at DESC, p.id DESC
-  `).all(classroomId).map((photo) => ({
+  `).all(classroomId);
+  const photos = photosData.map((photo) => ({
     ...photo,
     sizeLabel: formatBytes(photo.size),
     canDelete: true,
     url: `/api/classrooms/${classroomId}/photos/${photo.id}/file`
   }));
 
-  const pendingRequests = await adapter.prepare(`
+  const pendingRequestsData = await adapter.prepare(`
     SELECT pr.id, pr.action, pr.photo_id AS photoId, pr.original_name AS originalName,
            pr.size, pr.created_at AS createdAt, u.display_name AS submitterName
     FROM classroom_photo_requests pr
     JOIN users u ON u.id = pr.submitter_id
     WHERE pr.classroom_id = ? AND pr.status = 'pending'
     ORDER BY pr.created_at DESC, pr.id DESC
-  `).all(classroomId).map((request) => ({
+  `).all(classroomId);
+  const pendingRequests = pendingRequestsData.map((request) => ({
     ...request,
     sizeLabel: formatBytes(request.size)
   }));
@@ -1313,7 +1315,7 @@ async function getClassroomCreateReviewRequests(status) {
 }
 
 async function getClassroomPhotoReviewRequests(status) {
-  return await adapter.prepare(`
+  const rows = await adapter.prepare(`
     SELECT pr.id, pr.classroom_id, pr.submitter_id, pr.action, pr.photo_id, pr.original_name,
            pr.size, pr.status, pr.reviewer_id, pr.review_note, pr.created_at, pr.reviewed_at,
            c.building, c.room, COALESCE(fd.value, c.room) AS front_door,
@@ -1327,7 +1329,8 @@ async function getClassroomPhotoReviewRequests(status) {
     LEFT JOIN users ru ON ru.id = pr.reviewer_id
     WHERE (? = 'all' OR pr.status = ?)
     ORDER BY pr.created_at DESC, pr.id DESC
-  `).all(status, status).map((request) => ({
+  `).all(status, status);
+  return rows.map((request) => ({
     ...request,
     requestType: "photo",
     photoAction: request.action,
