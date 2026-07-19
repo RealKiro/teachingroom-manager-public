@@ -14,6 +14,10 @@ let adapter = null;
 
 export async function initDb() {
   adapter = await createAdapter();
+  // 确保数据目录存在（仅在 SQLite 时需要）
+  if (adapter.constructor.name === "SQLiteAdapter") {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
   await adapter.connect();
   const type = adapter.constructor.name;
   if (type === "SQLiteAdapter") {
