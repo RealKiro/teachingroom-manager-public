@@ -29,25 +29,25 @@ export async function importSourceExcel(filePath = sourceExcel) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
 
-  const insertClassroom = await adapter.prepare(`
-    INSERT INTO classrooms (building, room)
-    VALUES (?, ?)
-    ON CONFLICT(building, room) DO UPDATE SET updated_at = ${adapter.nowSql}
-    RETURNING id
-  `);
+  // 先提取数据（不需要事务）
+  const rows = extractClassroomRows(workbook, { includeBlankBackDoorForSource: true });
 
-  const importTx = await adapter.transaction(async (rows) => {
+  // 再执行事务写入
+  await adapter.transaction(async () => {
     for (const row of rows) {
-      const classroom = insertClassroom.get(row.building, row.room);
+      const classroom = await adapter.prepare(`
+        INSERT INTO classrooms (building, room)
+        VALUES (?, ?)
+        ON CONFLICT(building, room) DO UPDATE SET updated_at = ${adapter.nowSql}
+        RETURNING id
+      `).get(row.building, row.room);
+
       for (const [fieldKey, value] of Object.entries(row.values)) {
         await setClassroomValue(classroom.id, fieldKey, value);
       }
     }
   });
 
-  const rows = extractClassroomRows(workbook, { includeBlankBackDoorForSource: true });
-
-  importTx(rows);
   await logAudit(null, "import_excel", "workbook", null, { file: path.basename(filePath), count: rows.length });
   return { imported: true, count: rows.length };
 }

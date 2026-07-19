@@ -83,6 +83,8 @@ app.post("/api/login", async (req, res) => {
   }
   req.session.user = safeUser(user);
   await logAudit(user.id, "login", "user", user.id);
+  // 等待 session 写入完成后再响应
+  await new Promise((resolve) => req.session.save(resolve));
   res.json({ user: req.session.user });
 });
 
@@ -958,7 +960,10 @@ app.patch("/api/users/:id", requireSuperAdmin, async (req, res) => {
     RETURNING id, username, display_name AS displayName, role, active, created_at AS createdAt
   `).get(displayName, role, active, userId);
   await sessionStore.destroyUserSessions(userId, userId === req.session.user.id ? req.sessionID : "");
-  if (userId === req.session.user.id) req.session.user = safeUser({ ...existing, display_name: displayName, role, active });
+  if (userId === req.session.user.id) {
+    req.session.user = safeUser({ ...existing, display_name: displayName, role, active });
+    await new Promise((resolve) => req.session.save(resolve));
+  }
   await logAudit(req.session.user.id, "update_user", "user", userId, { username: user.username, role, active });
   res.json({ user });
 });
