@@ -13,7 +13,7 @@
 //   boolean(val)        → convert integer to boolean
 //   upsertSql(table, constraint, setCols) → dialect-specific upsert clause
 
-import { url } from "./adapters/sqlite.js";
+
 // Adapter URLs:
 // SQLite:     sqlite:///path/to/db.sqlite  or  DB_PATH env var
 // MySQL:      mysql://user:pass@host:port/dbname
