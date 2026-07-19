@@ -167,23 +167,23 @@ async function eventToInverseOperations(event) {
 }
 
 async function summarizeOperations(operations) {
-  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
-  const currentValue = await adapter.prepare("SELECT value FROM classroom_values WHERE classroom_id = ? AND field_key = ?");
-  const classroom = await adapter.prepare("SELECT building, room FROM classrooms WHERE id = ?");
-  const photo = await adapter.prepare("SELECT original_name, deleted_at FROM classroom_photos WHERE id = ?");
+  const fields = new Map((await getFields()).map((field) => [field.key, field.label]));
+  const currentValue = adapter.prepare("SELECT value FROM classroom_values WHERE classroom_id = ? AND field_key = ?");
+  const classroom = adapter.prepare("SELECT building, room FROM classrooms WHERE id = ?");
+  const photo = adapter.prepare("SELECT original_name, deleted_at FROM classroom_photos WHERE id = ?");
   const simulatedValues = new Map();
   const simulatedPhotos = new Map();
   const deletedClassrooms = new Set();
   const changes = [];
 
   for (const operation of operations) {
-    const room = classroom.get(operation.classroomId);
+    const room = await classroom.get(operation.classroomId);
     const roomLabel = room ? `${room.building} ${room.room}` : `教室 #${operation.classroomId}`;
     if (operation.type === "set_value" && !deletedClassrooms.has(operation.classroomId)) {
       const key = `${operation.classroomId}|${operation.fieldKey}`;
       const before = simulatedValues.has(key)
         ? simulatedValues.get(key)
-        : String(currentValue.get(operation.classroomId, operation.fieldKey)?.value || "");
+        : String((await currentValue.get(operation.classroomId, operation.fieldKey))?.value || "");
       const after = String(operation.value || "");
       simulatedValues.set(key, after);
       if (before !== after) changes.push({
@@ -196,7 +196,7 @@ async function summarizeOperations(operations) {
         restoreValue: after
       });
     } else if (["delete_photo", "restore_photo"].includes(operation.type)) {
-      const photoRow = photo.get(operation.photoId);
+      const photoRow = await photo.get(operation.photoId);
       if (!photoRow) continue;
       const beforeDeleted = simulatedPhotos.has(operation.photoId)
         ? simulatedPhotos.get(operation.photoId)
