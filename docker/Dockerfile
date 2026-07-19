@@ -20,10 +20,51 @@ COPY package*.json ./
 RUN npm ci --omit=dev && \
     npm cache clean --force && \
     rm -rf /tmp/* && \
-    # 删除编译工具链（仅在本阶段内释放空间，最终镜像不受影响）
     apk del .build-deps
 
-# ---------- Stage 2: 最小化运行镜像 ----------
+
+# ---------- Stage 2: 前端资源压缩 ----------
+FROM node:24-alpine AS minify
+
+WORKDIR /app
+
+# 复制原始静态文件
+COPY public/ ./public/
+
+# 安装压缩工具并压缩 HTML/CSS/JS
+RUN apk add --no-cache --virtual .minify-deps npm && \
+    npm install -g html-minifier-terser csso-cli terser --no-audit --no-fund && \
+    \
+    # 压缩 HTML
+    html-minifier-terser \
+      --collapse-whitespace \
+      --remove-comments \
+      --remove-optional-tags \
+      --remove-redundant-attributes \
+      --remove-script-type-attributes \
+      --remove-style-link-type-attributes \
+      --use-short-doctype \
+      --minify-css true \
+      --minify-js true \
+      -o public/index.html \
+      public/index.html && \
+    \
+    # 压缩 CSS
+    csso public/styles.css public/styles.css && \
+    \
+    # 压缩 JS
+    terser public/app.js \
+      --compress \
+      --mangle \
+      --output public/app.js && \
+    \
+    # 清理
+    npm uninstall -g html-minifier-terser csso-cli terser && \
+    apk del .minify-deps && \
+    rm -rf /tmp/* "$(npm root -g)" "$(npm root -g)/.."/*
+
+
+# ---------- Stage 3: 最小化运行镜像 ----------
 FROM node:24-alpine
 
 # ---- 镜像元数据 (GHCR / OCI 标准标签) ----
@@ -40,10 +81,12 @@ WORKDIR /app
 # 复制已安装的生产依赖（不含 devDependencies、npm 缓存、编译工具等）
 COPY --from=deps /app/node_modules ./node_modules
 
-# 仅复制运行时需要的应用文件
+# 复制压缩后的前端资源
+COPY --from=minify /app/public/ ./public/
+
+# 复制运行时需要的后端文件
 COPY package*.json ./
 COPY src/          ./src/
-COPY public/       ./public/
 COPY docker/healthcheck.js ./
 
 # 可选：首次启动自动导入的演示数据

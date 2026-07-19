@@ -1,5 +1,13 @@
 # ============================================================
 #  Docker 镜像构建 & 推送 (GitHub Container Registry)
+#
+#  特性：
+#    - 多平台构建（linux/amd64 + linux/arm64）
+#    - Docker 层缓存（加速重复构建）
+#    - 前置测试验证（仅测试通过后才构建）
+#    - 安全扫描（Trivy，非阻塞）
+#    - PR 构建只验证不推送
+#
 #  触发条件：
 #    - push 到 main 分支  → 构建并推送 :latest + :sha-<短哈希>
 #    - push 版本标签 v*  → 构建并推送 :<版本>、:<大版本.小版本>
@@ -19,21 +27,51 @@ on:
 env:
   REGISTRY: ghcr.io
   # GitHub 容器仓库的默认命名空间：ghcr.io/<仓库所有者>/<镜像名>
-  # 注意：请将以下值替换为你 fork 后的实际镜像名
+  # 注意：fork 后请替换为你自己的镜像名
   IMAGE_NAME: ${{ github.repository_owner }}/teachingroom-manager
+  DOCKERFILE_PATH: docker/Dockerfile
 
 jobs:
-  build:
+  # ============== Job 1: 测试 ==============
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  # ============== Job 2: 构建并推送 ==============
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    # 等待测试通过后才构建
+    needs: [test]
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 登录到 GHCR（使用 GITHUB_TOKEN，无需额外配置）
+      # ---- 设置 QEMU（多平台构建所需） ----
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # ---- 设置 Docker Buildx（支持多平台 + 缓存） ----
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ---- 登录 GHCR ----
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -41,24 +79,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 自动生成镜像标签和 OCI 元数据
+      # ---- 自动生成镜像标签和 OCI 元数据 ----
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
+            type=ref,event=pr
+          flavor: |
+            latest=auto
 
-      # 构建并推送（PR 事件只构建不推送）
+      # ---- 构建并推送 ----
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ env.DOCKERFILE_PATH }}
+          # PR 事件只构建（不推送），推送事件 构建 + 推送
           push: ${{ github.event_name != 'pull_request' }}
+          # 多平台：AMD64 + ARM64
+          platforms: linux/amd64${{ github.event_name != 'pull_request' && ', linux/arm64' || '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Docker 层缓存（加速重复构建）
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---- （非阻塞）安全扫描 ----
+      - name: Run Trivy vulnerability scanner
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version || 'latest' }}
+          format: table
+          exit-code: "0" # 不阻塞构建，仅输出报告
+          severity: HIGH,CRITICAL
