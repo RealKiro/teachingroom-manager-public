@@ -579,12 +579,12 @@ app.post("/api/change-requests", requireLogin, async (req, res) => {
       INSERT INTO change_request_items (request_id, field_key, old_value, new_value)
       VALUES (?, ?, ?, ?)
     `);
-    for (const item of items) insertItem.run(request.id, item.fieldKey, item.oldValue, item.newValue);
+    for (const item of items) await insertItem.run(request.id, item.fieldKey, item.oldValue, item.newValue);
     await logAudit(req.session.user.id, "submit_change_request", "change_request", request.id, { classroomId: id, items });
     return request.id;
   });
 
-  res.status(201).json({ id: createRequest(), status: "pending" });
+  res.status(201).json({ id: createRequest, status: "pending" });
 });
 
 app.get("/api/change-requests", requireLogin, async (req, res) => {
@@ -754,7 +754,7 @@ app.post("/api/rollback/change-requests/:id", requireSuperAdmin, async (req, res
       changedClassroomIds.add(change.classroomId);
     }
     const updateClassroom = await adapter.prepare(`UPDATE classrooms SET updated_at = ${adapter.nowSql} WHERE id = ?`);
-    for (const classroomId of changedClassroomIds) updateClassroom.run(classroomId);
+    for (const classroomId of changedClassroomIds) await updateClassroom.run(classroomId);
 
     await logAudit(req.session.user.id, scope === "single" ? "rollback_change_request" : "rollback_to_before", "change_request", requestId, {
       scope,
@@ -795,7 +795,7 @@ app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, async
 
   const applyRollback = await adapter.transaction(async () => {
     const deleteClassroom = await adapter.prepare("DELETE FROM classrooms WHERE id = ?");
-    for (const change of preview.changes) deleteClassroom.run(change.classroomId);
+    for (const change of preview.changes) await deleteClassroom.run(change.classroomId);
 
     await logAudit(req.session.user.id, scope === "single" ? "rollback_create_request" : "rollback_create_to_before", "classroom_create_request", requestId, {
       scope,
@@ -1821,9 +1821,9 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
 
     const requestIds = [];
     for (const group of requestGroups) {
-      const request = insertRequest.get(group.classroomId, submitterId, `Excel上传：${originalName}`);
+      const request = await insertRequest.get(group.classroomId, submitterId, `Excel上传：${originalName}`);
       requestIds.push(request.id);
-      for (const item of group.items) insertItem.run(request.id, item.fieldKey, item.oldValue, item.newValue);
+      for (const item of group.items) await insertItem.run(request.id, item.fieldKey, item.oldValue, item.newValue);
     }
     const createRequestIds = [];
     for (const group of createRequestGroups) {
