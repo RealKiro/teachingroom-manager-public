@@ -124,9 +124,10 @@ jobs:
       # ---- （非阻塞）安全扫描 ----
       - name: Run Trivy vulnerability scanner
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasecurity/trivy:latest \
+            ghcr.io/aquasecurity/trivy:latest \
             image --severity HIGH,CRITICAL --no-progress \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version || 'latest' }}
