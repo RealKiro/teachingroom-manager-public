@@ -1,5 +1,7 @@
 # 教室设备管理系统
 
+[![Docker build](https://github.com/teachingroom-manager-public/teachingroom-manager/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/teachingroom-manager-public/teachingroom-manager/actions/workflows/docker-publish.yml)
+
 [English](./README.en.md)
 
 教室设备管理系统是一个轻量级 Web 系统，用于把教室设备 Excel 台账转成可持续维护、可审核、可备份的数据管理工具。
@@ -8,15 +10,20 @@
 
 本系统面向校内小团队使用，预计用户规模约 10 人，因此技术栈保持简单：Node.js、Express、SQLite 和原生前端页面。
 
+---
+
 ## 文档导航
 
 - [精简部署指南](./DEPLOYMENT.md)
+- [Docker 部署（推荐）](#docker-部署)
 - [完整部署与运维手册](./docs/DEPLOYMENT.md)
 - [开发说明](./DEVELOPMENT.md)
 - [更新日志](./docs/CHANGELOG.md)
 - [项目工作记录](./docs/WORK_LOG_2026-05-18.md)
 - [版本与上传记录](./TIMESTAMP_LOG.md)
 - [全部文档](./docs/README.md)
+
+---
 
 ## 功能
 
@@ -36,7 +43,87 @@
 - 支持自动备份、手动备份、下载备份、上传备份和启用备份。
 - 提供只读基础数据 API，便于其他部门或内部系统接入。
 
-## 快速开始
+---
+
+## Docker 部署（推荐）
+
+> **建议先 Fork 此仓库，自行构建镜像并保存到自己的 GitHub Container Registry（GHCR），确保镜像来源可控。**
+
+### 前置条件
+
+- Docker & Docker Compose
+- 生成一个 Session 密钥：`openssl rand -hex 32`
+
+### 快速启动
+
+```bash
+# 1. 克隆仓库（或你的 fork）
+git clone https://github.com/teachingroom-manager-public/teachingroom-manager.git
+cd teachingroom-manager
+
+# 2. 启动（首次会自动拉取 GHCR 预构建镜像）
+export SESSION_SECRET="$(openssl rand -hex 32)"
+docker compose up -d
+
+# 3. 打开浏览器访问
+open http://localhost:3000/
+```
+
+> **首次管理员账号**
+>
+> 用户名：`admin`
+>
+> 密码：优先使用 `INITIAL_ADMIN_PASSWORD` 环境变量；未设置时自动生成，登录后可在容器日志或 `data/initial-admin-password.txt` 中查看。
+
+### 自行构建
+
+如需自行构建而非拉取预构建镜像，修改 `docker-compose.yml`：
+
+```yaml
+services:
+  teachingroom:
+    # 注释 image: 行，取消注释 build: 块
+    # image: ghcr.io/teachingroom-manager-public/teachingroom-manager:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+```
+
+然后执行：
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+### 镜像体积
+
+采用多阶段构建 + Alpine 基础镜像，最终运行镜像约 **150MB**（相比单阶段 slim 构建减小约 60MB）。
+
+### 持久化数据
+
+Docker 部署的数据保存在以下目录（在 `docker-compose.yml` 同一目录下）：
+
+| 目录 | 内容 |
+|---|---|
+| `./data/` | SQLite 数据库、令牌、Session 密钥 |
+| `./backups/` | 数据库自动/手动备份 |
+| `./uploads/` | 照片上传 |
+| `./exports/` | Excel 导出 |
+
+### 升级
+
+```bash
+# 拉取最新镜像
+docker compose pull
+
+# 重新创建容器
+docker compose up -d
+```
+
+---
+
+## 快速开始（非 Docker）
 
 ```bash
 npm install
@@ -59,6 +146,8 @@ http://localhost:3000/
 
 系统不会创建固定密码，也不会自动创建巡查员。首次登录后请立即修改管理员密码；修改成功后，随机生成的临时密码文件会自动删除。巡查员和普通管理员可在用户管理页面创建。
 
+---
+
 ## 默认运行参数
 
 ```text
@@ -79,6 +168,8 @@ BACKUP_MIRROR_DIR=<optional second backup directory>
 ```
 
 该文件中的楼栋、门牌号、班级、部门、设备和备注均为虚构示例。正式使用前请替换或删除这些记录。
+
+---
 
 ## 数据和备份
 
@@ -103,6 +194,8 @@ backups/
 超级管理员也可以在页面中手动创建、下载、上传并启用数据库备份。
 
 备份不按天数清理。自动备份默认保留最新 200 份；手动备份和恢复前备份永久保留，需由管理员在系统外按制度归档或删除。可设置 `BACKUP_MIRROR_DIR` 将备份同步到第二块磁盘或网络目录。
+
+---
 
 ## 基础数据 API
 
@@ -145,6 +238,8 @@ planned=audio
 search=X101
 ```
 
+---
+
 ## 部署
 
 仓库提供 systemd 服务模板：
@@ -155,9 +250,15 @@ deploy/teachingroom.service
 
 部署和维护说明见 [DEPLOYMENT.md](./DEPLOYMENT.md) 和 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)。
 
+**推荐使用 Docker 部署**，详见 [Docker 部署](#docker-部署) 一节。
+
+---
+
 ## 开发
 
 架构、开发流程和仓库规范见 [DEVELOPMENT.md](./DEVELOPMENT.md)。
+
+---
 
 ## 版本和上传记录
 

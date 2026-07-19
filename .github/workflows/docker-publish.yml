@@ -1,0 +1,64 @@
+# ============================================================
+#  Docker 镜像构建 & 推送 (GitHub Container Registry)
+#  触发条件：
+#    - push 到 main 分支  → 构建并推送 :latest + :sha-<短哈希>
+#    - push 版本标签 v*  → 构建并推送 :<版本>、:<大版本.小版本>
+#    - PR 到 main         → 仅构建验证，不推送
+#    - 手动触发           → 构建并推送
+# ============================================================
+name: Build & publish Docker image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  # GitHub 容器仓库的默认命名空间：ghcr.io/<仓库所有者>/<镜像名>
+  # 注意：请将以下值替换为你 fork 后的实际镜像名
+  IMAGE_NAME: ${{ github.repository_owner }}/teachingroom-manager
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 登录到 GHCR（使用 GITHUB_TOKEN，无需额外配置）
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 自动生成镜像标签和 OCI 元数据
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      # 构建并推送（PR 事件只构建不推送）
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

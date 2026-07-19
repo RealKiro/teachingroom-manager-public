@@ -1,18 +1,56 @@
+# ============================================================
+#  Docker 构建上下文忽略规则
+#  配合 docker/Dockerfile 多阶段构建使用
+# ============================================================
+
+# ── 依赖 ──────────────────────────────────────────────
 node_modules/
-data/*.sqlite
-data/*.sqlite-shm
-data/*.sqlite-wal
-data/base-data-api-token.txt
-data/session-secret.txt
-data/initial-admin-password.txt
+
+# ── 运行时数据（挂载卷，不打包进镜像） ────────────────
+data/
 backups/
 uploads/
 exports/
 output/
-.playwright-cli/
-.playwright-mcp/
+
+# ── 版本控制 ──────────────────────────────────────────
 .git/
+.gitignore
+.gitattributes
+
+# ── 环境配置 ──────────────────────────────────────────
 .env
-npm-debug.log*
-~$*
+.env.*
+
+# ── 文档（运行时不需要） ──────────────────────────────
+*.md
+docs/
+DEPLOYMENT.*
+DEVELOPMENT.*
+TIMESTAMP_LOG.*
+
+# ── CI/CD（运行时不需要） ──────────────────────────────
+.github/
+
+# ── 部署配置（运行时不需要） ──────────────────────────
+deploy/
+
+# ── 测试（运行时不需要） ──────────────────────────────
+tests/
+
+# ── IDE / 编辑器 ──────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── 操作系统 ──────────────────────────────────────────
 .DS_Store
+Thumbs.db
+~$*
+
+# ── 日志 ──────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
