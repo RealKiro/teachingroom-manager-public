@@ -614,11 +614,11 @@ app.get("/api/change-requests", requireLogin, async (req, res) => {
     ORDER BY fd.sort_order
   `);
 
-  const updateRequests = requests.map((request) => ({
-    ...request,
-    requestType: "update",
-    items: itemStmt.all(request.id)
-  }));
+  const updateRequests = [];
+  for (const request of requests) {
+    const items = await itemStmt.all(request.id);
+    updateRequests.push({ ...request, requestType: "update", items });
+  }
   const createRequests = await getClassroomCreateReviewRequests(status);
   const photoRequests = await getClassroomPhotoReviewRequests(status);
   const combined = [...updateRequests, ...createRequests, ...photoRequests]
@@ -1037,10 +1037,11 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
     WHERE cri.request_id = ?
   `);
 
-  const matchingLogs = rows.map((row) => {
+  const matchingLogs = [];
+  for (const row of rows) {
     const detail = parseJsonObject(row.detailJson);
     const items = row.targetType === "change_request"
-      ? itemStmt.all(row.targetId).map((item) => ({
+      ? (await itemStmt.all(row.targetId)).map((item) => ({
         ...item,
         label: fields.get(item.fieldKey) || item.fieldKey
       }))
@@ -1048,7 +1049,7 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
         ? detail.items.map((item) => ({ ...item, label: fields.get(item.fieldKey) || item.fieldKey }))
         : [];
     const targetLabel = buildAuditTargetLabel(row, detail);
-    return {
+    matchingLogs.push({
       id: row.id,
       actorId: row.actorId,
       actorUsername: row.actorUsername || "",
@@ -1062,8 +1063,9 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
       detail,
       items,
       createdAt: row.createdAt
-    };
-  }).filter((log) => {
+    });
+  }
+  const allLogs = matchingLogs.filter((log) => {
     if (!search) return true;
     const haystack = [
       log.actorUsername,
@@ -1078,9 +1080,9 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
     return haystack.includes(search);
   });
 
-  const total = matchingLogs.length;
+  const total = allLogs.length;
   const offset = (page - 1) * pageSize;
-  const logs = matchingLogs.slice(offset, offset + pageSize);
+  const logs = allLogs.slice(offset, offset + pageSize);
   const actors = await adapter.prepare(`
     SELECT DISTINCT u.id, u.username, u.display_name AS displayName
     FROM audit_logs al
