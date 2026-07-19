@@ -29,7 +29,7 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(backupsDir, { recursive: true });
 await initDb();
 const importResult = process.env.SKIP_SOURCE_IMPORT === "1"
-  ? { imported: false, count: await adapter.prepare("SELECT COUNT(*) AS count FROM classrooms").get().count }
+  ? { imported: false, count: (await adapter.prepare("SELECT COUNT(*) AS count FROM classrooms").get()).count }
   : await importSourceExcelIfEmpty();
 const baseDataToken = getOrCreateBaseDataToken();
 const sessionSecret = getOrCreateSessionSecret();
@@ -2395,7 +2395,8 @@ function toPublicClassroom(record, publishedKeys = new Set(getPublicFields().map
 }
 
 async function latestClassroomUpdatedAt() {
-  return await adapter.prepare("SELECT MAX(updated_at) AS updatedAt FROM classrooms").get().updatedAt || null;
+  const row = await adapter.prepare("SELECT MAX(updated_at) AS updatedAt FROM classrooms").get();
+  return row?.updatedAt || null;
 }
 
 function formatBuildingSide(value) {
