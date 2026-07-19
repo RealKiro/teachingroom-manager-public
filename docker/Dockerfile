@@ -56,6 +56,7 @@ RUN apk add --no-cache --virtual .minify-deps npm && \
     terser public/app.js \
       --compress \
       --mangle \
+      --module \
       --output public/app.js && \
     \
     # 清理
