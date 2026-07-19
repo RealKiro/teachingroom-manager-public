@@ -822,7 +822,8 @@ app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, async
 });
 
 app.get("/api/rollback/timeline/:auditId/preview", requireSuperAdmin, async (req, res) => {
-  res.json(buildTimelineRollbackPreview(Number(req.params.auditId), req.query.scope));
+  const preview = await buildTimelineRollbackPreview(Number(req.params.auditId), req.query.scope);
+  res.json(preview);
 });
 
 app.post("/api/rollback/timeline/:auditId", requireSuperAdmin, async (req, res, next) => {
