@@ -492,7 +492,7 @@ app.get("/api/open/meta", allowOpenCors, requireBaseDataToken, async (req, res) 
 
 app.get("/api/open/fields", allowOpenCors, requireBaseDataToken, async (req, res) => {
   res.json({
-    fields: getPublicFields().map(toPublicField)
+    fields: (await getPublicFields()).map(toPublicField)
   });
 });
 
@@ -511,7 +511,7 @@ app.get("/api/open/classrooms", allowOpenCors, requireBaseDataToken, async (req,
   const publishedKeys = new Set((await getPublicFields()).map((field) => field.key));
   const { records, summary, filters } = await getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
-    data: records.map((record) => toPublicClassroom(record, publishedKeys)),
+    data: await Promise.all(records.map((record) => toPublicClassroom(record, publishedKeys))),
     summary,
     filters,
     count: records.length,
@@ -525,7 +525,7 @@ app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, async (
   const record = records.find((item) => item.id === id || item.values.room === req.params.id);
   if (!record) return res.status(404).json({ error: "教室不存在" });
   const publishedKeys = new Set((await getPublicFields()).map((field) => field.key));
-  res.json({ data: toPublicClassroom(record, publishedKeys), updatedAt: latestClassroomUpdatedAt() });
+  res.json({ data: await toPublicClassroom(record, publishedKeys), updatedAt: await latestClassroomUpdatedAt() });
 });
 
 app.post("/api/change-requests", requireLogin, async (req, res) => {
@@ -2367,7 +2367,11 @@ async function getPublicFields() {
   return (await getFields()).filter((field) => field.publicApi);
 }
 
-function toPublicClassroom(record, publishedKeys = new Set(getPublicFields().map((field) => field.key))) {
+async function toPublicClassroom(record, publishedKeys = new Set()) {
+  if (!publishedKeys.size) {
+    const fields = await getPublicFields();
+    publishedKeys = new Set(fields.map((field) => field.key));
+  }
   const values = { ...record.values };
   const publicValue = (key) => publishedKeys.has(key) ? values[key] || "" : "";
   const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => publishedKeys.has(key)));
