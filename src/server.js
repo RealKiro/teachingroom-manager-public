@@ -1133,9 +1133,9 @@ if (process.env.NODE_ENV !== "test") startServer();
 
 export { app, pruneDatabaseBackups };
 
-function requireLogin(req, res, next) {
+async function requireLogin(req, res, next) {
   if (!req.session.user) return res.status(401).json({ error: "请先登录" });
-  const user = findActiveUser(req.session.user.id);
+  const user = await findActiveUser(req.session.user.id);
   if (!user) {
     return req.session.destroy(() => res.status(401).json({ error: "账号已停用或删除，请重新登录" }));
   }
@@ -1143,18 +1143,24 @@ function requireLogin(req, res, next) {
   next();
 }
 
-function requireAdmin(req, res, next) {
-  requireLogin(req, res, () => {
-    if (req.session.user.role !== "admin") return res.status(403).json({ error: "需要管理员权限" });
-    next();
-  });
+async function requireAdmin(req, res, next) {
+  const user = req.session?.user;
+  if (!user) return res.status(401).json({ error: "请先登录" });
+  const active = await findActiveUser(user.id);
+  if (!active) return req.session.destroy(() => res.status(401).json({ error: "账号已停用或删除，请重新登录" }));
+  req.session.user = safeUser(active);
+  if (active.role !== "admin") return res.status(403).json({ error: "需要管理员权限" });
+  next();
 }
 
-function requireSuperAdmin(req, res, next) {
-  requireLogin(req, res, () => {
-    if (req.session.user.username !== superAdminUsername) return res.status(403).json({ error: "需要超级管理员权限" });
-    next();
-  });
+async function requireSuperAdmin(req, res, next) {
+  const user = req.session?.user;
+  if (!user) return res.status(401).json({ error: "请先登录" });
+  const active = await findActiveUser(user.id);
+  if (!active) return req.session.destroy(() => res.status(401).json({ error: "账号已停用或删除，请重新登录" }));
+  req.session.user = safeUser(active);
+  if (active.username !== superAdminUsername) return res.status(403).json({ error: "需要超级管理员权限" });
+  next();
 }
 
 async function findActiveUser(userId) {
