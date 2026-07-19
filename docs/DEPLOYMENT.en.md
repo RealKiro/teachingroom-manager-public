@@ -2,7 +2,7 @@
 
 [中文](./DEPLOYMENT.md)
 
-This is the complete deployment and operations manual. The root [DEPLOYMENT.en.md](../DEPLOYMENT.en.md) is the concise guide for quick handoff.
+This is the complete deployment and operations manual. The [concise deployment guide](./DEPLOYMENT_QUICK.en.md) is an alternative for quick handoff.
 
 ## 1. Deployment Goal
 

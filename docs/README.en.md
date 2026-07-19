@@ -7,15 +7,15 @@ Chinese is the default documentation language. English versions use matching `.e
 ## Usage And Handoff
 
 - [Project overview](../README.en.md)
-- [Concise deployment guide](../DEPLOYMENT.en.md)
+- [Concise deployment guide](./DEPLOYMENT_QUICK.en.md)
 - [Complete deployment and operations manual](./DEPLOYMENT.en.md)
 
 ## Development And Maintenance
 
-- [Development notes](../DEVELOPMENT.en.md)
+- [Development notes](./DEVELOPMENT.en.md)
 - [Changelog](./CHANGELOG.en.md)
 - [Project work log](./WORK_LOG_2026-05-18.en.md)
-- [Version and upload log](../TIMESTAMP_LOG.en.md)
+- [Version and upload log](./TIMESTAMP_LOG.en.md)
 
 ## Documentation Rules
 

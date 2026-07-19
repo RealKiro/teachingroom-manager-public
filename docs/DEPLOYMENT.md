@@ -2,7 +2,7 @@
 
 [English](./DEPLOYMENT.en.md)
 
-本文是完整的部署与运维手册。根目录 [DEPLOYMENT.md](../DEPLOYMENT.md) 是适合快速交付的精简部署指南。
+本文是完整的部署与运维手册。[精简部署指南](./DEPLOYMENT_QUICK.md) 是适合快速交付的另一种选择。
 
 ## 1. 部署目标
 

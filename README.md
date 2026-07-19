@@ -1,129 +1,168 @@
-# 教室设备管理系统
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-24.x-339933?logo=node.js&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white" alt="Express">
+  <img src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  <br>
+  <a href="https://github.com/teachingroom-manager-public/teachingroom-manager/actions/workflows/docker-publish.yml">
+    <img src="https://github.com/teachingroom-manager-public/teachingroom-manager/actions/workflows/docker-publish.yml/badge.svg" alt="Docker build">
+  </a>
+  <img src="https://img.shields.io/badge/docker%20image-~150%20MB-2496ED?logo=docker&logoColor=white" alt="Docker image size">
+  <img src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-lightgrey" alt="Platforms">
+</p>
 
-[![Docker build](https://github.com/teachingroom-manager-public/teachingroom-manager/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/teachingroom-manager-public/teachingroom-manager/actions/workflows/docker-publish.yml)
+# 🏫 教室设备管理系统
 
-[English](./README.en.md)
+> 把教室设备 Excel 台账变成可持续维护、可审核、可备份的 Web 管理工具。
 
-教室设备管理系统是一个轻量级 Web 系统，用于把教室设备 Excel 台账转成可持续维护、可审核、可备份的数据管理工具。
-
-仓库附带 `初始化数据表格（虚拟）.xlsx`，用于演示首次初始化。该文件只包含虚构数据；系统支持教室台账、巡查更新、审核流程、Excel 导入导出、操作记录、数据回滚、数据库备份，以及面向其他部门的只读基础数据接口。
-
-本系统面向校内小团队使用，预计用户规模约 10 人，因此技术栈保持简单：Node.js、Express、SQLite 和原生前端页面。
-
----
-
-## 文档导航
-
-- [精简部署指南](./DEPLOYMENT.md)
-- [Docker 部署（推荐）](#docker-部署)
-- [完整部署与运维手册](./docs/DEPLOYMENT.md)
-- [开发说明](./DEVELOPMENT.md)
-- [更新日志](./docs/CHANGELOG.md)
-- [项目工作记录](./docs/WORK_LOG_2026-05-18.md)
-- [版本与上传记录](./TIMESTAMP_LOG.md)
-- [全部文档](./docs/README.md)
+[English](./README.en.md) · [文档中心](./docs/README.md) · [更新日志](./docs/CHANGELOG.md)
 
 ---
 
-## 功能
+## 📋 目录
 
-- 首次启动时从虚构 Excel 模板自动导入演示数据。
-- 支持桌面表格视图，以及手机、平板卡片视图。
-- 支持按楼栋、级部、更新计划、待审核状态和关键字快速筛选。
-- 支持超级管理员、管理员、巡查员三类角色。
-- 巡查员和管理员提交的数据变更会进入审核流程。
-- 除超级管理员外，新增教室、字段变更、照片上传和照片删除均需其他管理员交叉审核。
-- 管理员对字段级新旧值进行审核后，正式数据才会更新。
-- 用户管理和操作记录仅超级管理员可见。
-- 支持撤销单次已审核修改，以及跨字段、教室新增和照片操作还原到某条记录之前。
-- 支持按当前筛选结果导出 Excel。
-- Excel 上传不会直接覆盖正式数据，而是生成待审核变更。
-- 登录 session 保存到 SQLite。
-- 弱网提交会进入浏览器持久队列，并通过幂等请求自动补交。
-- 支持自动备份、手动备份、下载备份、上传备份和启用备份。
-- 提供只读基础数据 API，便于其他部门或内部系统接入。
+- [功能特性](#-功能特性)
+- [快速开始](#-快速开始)
+  - [Docker 部署（推荐）](#docker-部署推荐)
+  - [传统部署](#传统部署)
+- [技术栈](#-技术栈)
+- [项目结构](#-项目结构)
+- [环境变量](#-环境变量)
+- [基础数据 API](#-基础数据-api)
+- [部署选项](#-部署选项)
+- [开发](#-开发)
+- [许可证](#📄-许可证)
 
 ---
 
-## Docker 部署（推荐）
+## ✨ 功能特性
 
-> **建议先 Fork 此仓库，自行构建镜像并保存到自己的 GitHub Container Registry（GHCR），确保镜像来源可控。**
+<table>
+<tr>
+<td>
 
-### 前置条件
+**📊 台账管理**
+- 首次启动从 Excel 自动导入演示数据
+- 桌面表格 + 手机/平板卡片双视图
+- 按楼栋、级部、更新计划、关键字快速筛选
+- 按当前筛选结果导出 Excel
 
-- Docker & Docker Compose
-- 生成一个 Session 密钥：`openssl rand -hex 32`
+</td>
+<td>
 
-### 快速启动
+**✅ 审核流程**
+- 字段级变更提交 → 交叉审核 → 正式生效
+- 新增教室、字段变更、照片上传/删除均需审核
+- 提交人不能审核自己的变更
+- Excel 上传生成待审核变更，不直接覆盖数据
+
+</td>
+</tr>
+<tr>
+<td>
+
+**👥 权限管理**
+- 超级管理员、管理员、巡查员三级角色
+- 超级管理员管理用户、审计日志、回滚、备份
+- 用户停用/降级/删除后 session 立即失效
+
+</td>
+<td>
+
+**🔄 数据安全**
+- 单条撤销 + 按时间线整体回滚
+- 每日自动备份 + 手动备份 + 备份下载/上传/恢复
+- 备份镜像到第二磁盘/网络目录
+- 跨字段、教室新增和照片操作均可回滚
+
+</td>
+</tr>
+<tr>
+<td>
+
+**📡 开放 API**
+- 只读基础数据接口（教室列表、字段、汇总）
+- Token 鉴权，可选 CORS 白名单
+- 便于其他部门或信息系统对接
+
+</td>
+<td>
+
+**📱 离线友好**
+- 弱网提交进入浏览器 IndexedDB 持久队列
+- 幂等请求自动补交
+- Session 持久化到 SQLite
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 快速开始
+
+### Docker 部署（推荐）
+
+> 💡 **建议先 Fork 此仓库**，自行构建镜像并保存到自己的 GHCR，确保来源可控。
+
+**前置条件：** Docker & Docker Compose
 
 ```bash
 # 1. 克隆仓库（或你的 fork）
-git clone https://github.com/teachingroom-manager-public/teachingroom-manager.git
+git clone https://github.com/REPLACE_WITH_YOUR_USERNAME/teachingroom-manager.git
 cd teachingroom-manager
 
-# 2. 启动（首次会自动拉取 GHCR 预构建镜像）
+# 2. 生成 Session 密钥并启动
 export SESSION_SECRET="$(openssl rand -hex 32)"
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 
-# 3. 打开浏览器访问
+# 3. 打开浏览器
 open http://localhost:3000/
 ```
 
 > **首次管理员账号**
 >
-> 用户名：`admin`
->
-> 密码：优先使用 `INITIAL_ADMIN_PASSWORD` 环境变量；未设置时自动生成，登录后可在容器日志或 `data/initial-admin-password.txt` 中查看。
+> | 用户名 | 密码 |
+> |---|---|
+> | `admin` | 优先使用 `INITIAL_ADMIN_PASSWORD` 环境变量；<br>未设置时自动生成，查看容器日志或 `data/initial-admin-password.txt` |
 
-### 自行构建
-
-如需自行构建而非拉取预构建镜像，修改 `docker-compose.yml`：
-
-```yaml
-services:
-  teachingroom:
-    # 注释 image: 行，取消注释 build: 块
-    # image: ghcr.io/teachingroom-manager-public/teachingroom-manager:latest
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-```
-
-然后执行：
+**自行构建：** 取消注释 `docker/docker-compose.yml` 中的 `build:` 块，注释 `image:` 行，然后：
 
 ```bash
+cd docker
 docker compose build
 docker compose up -d
 ```
 
-### 镜像体积
+<details>
+<summary><b>📦 镜像信息</b></summary>
 
-采用多阶段构建 + Alpine 基础镜像，最终运行镜像约 **150MB**（相比单阶段 slim 构建减小约 60MB）。
-
-### 持久化数据
-
-Docker 部署的数据保存在以下目录（在 `docker-compose.yml` 同一目录下）：
-
-| 目录 | 内容 |
+| 属性 | 值 |
 |---|---|
-| `./data/` | SQLite 数据库、令牌、Session 密钥 |
-| `./backups/` | 数据库自动/手动备份 |
-| `./uploads/` | 照片上传 |
-| `./exports/` | Excel 导出 |
+| 基础镜像 | `node:24-alpine` |
+| 构建策略 | 3 阶段（依赖安装 → 前端压缩 → 运行镜像） |
+| 最终体积 | ~150 MB（比单阶段 slim 构建小 ~70 MB） |
+| 支持架构 | `linux/amd64` · `linux/arm64` |
+| 运行用户 | `node`（非 root） |
+| 健康检查 | 每 30s 检查 `/api/health` |
 
-### 升级
+</details>
 
-```bash
-# 拉取最新镜像
-docker compose pull
+<details>
+<summary><b>📂 数据持久化</b></summary>
 
-# 重新创建容器
-docker compose up -d
-```
+| 主机目录 | 容器路径 | 内容 |
+|---|---|---|
+| `./data/` | `/app/data` | SQLite 数据库、令牌、Session 密钥 |
+| `./backups/` | `/app/backups` | 数据库自动/手动备份 |
+| `./uploads/` | `/app/uploads` | 照片上传 |
+| `./exports/` | `/app/exports` | Excel 导出 |
 
----
+</details>
 
-## 快速开始（非 Docker）
+### 传统部署
+
+需要 Node.js 24+：
 
 ```bash
 npm install
@@ -131,135 +170,135 @@ npm test
 npm start
 ```
 
-打开：
-
-```text
-http://localhost:3000/
-```
-
-首次管理员账号：
-
-```text
-超级管理员用户名：admin
-密码：优先使用 INITIAL_ADMIN_PASSWORD；未设置时写入 data/initial-admin-password.txt
-```
-
-系统不会创建固定密码，也不会自动创建巡查员。首次登录后请立即修改管理员密码；修改成功后，随机生成的临时密码文件会自动删除。巡查员和普通管理员可在用户管理页面创建。
+打开 http://localhost:3000/ ，管理员账号同上。
 
 ---
 
-## 默认运行参数
+## 🛠️ 技术栈
 
-```text
-PORT=3000
-DATA_DIR=./data
-DB_PATH=./data/teachingroom.sqlite
-SESSION_SECRET=<optional; generated into data/session-secret.txt when omitted>
-INITIAL_ADMIN_PASSWORD=<optional first-run password; at least 12 characters>
-BASE_DATA_CORS_ORIGIN=<empty by default; comma-separated allowlist>
-AUTO_BACKUP_KEEP=200
-BACKUP_MIRROR_DIR=<optional second backup directory>
-```
-
-首次运行会创建 `data/teachingroom.sqlite`。如果数据库为空，系统会从以下 Excel 文件导入教室数据：
-
-```text
-初始化数据表格（虚拟）.xlsx
-```
-
-该文件中的楼栋、门牌号、班级、部门、设备和备注均为虚构示例。正式使用前请替换或删除这些记录。
+| 类别 | 技术 |
+|---|---|
+| **运行时** | [Node.js](https://nodejs.org/) 24.x |
+| **Web 框架** | [Express](https://expressjs.com/) 5 |
+| **数据库** | [SQLite](https://www.sqlite.org/)（[better-sqlite3](https://github.com/WiseLibs/better-sqlite3)） |
+| **前端** | 原生 HTML · CSS · JavaScript（无框架） |
+| **Excel** | [ExcelJS](https://github.com/exceljs/exceljs) |
+| **密码** | [bcryptjs](https://github.com/dcodeIO/bcrypt.js) |
+| **容器** | Docker · Docker Compose · GHCR |
 
 ---
 
-## 数据和备份
+## 🏗️ 项目结构
 
-运行数据不会提交到 Git：
-
-```text
-data/*.sqlite
-data/base-data-api-token.txt
-data/session-secret.txt
-data/initial-admin-password.txt
-backups/
-uploads/
-exports/
 ```
-
-系统会在以下目录创建每日自动备份：
-
-```text
-backups/
+teachingroom-manager/
+├── public/                        # 前端静态资源
+│   ├── index.html                 #   单页应用入口
+│   ├── styles.css                 #   全局样式（桌面 + 手机）
+│   └── app.js                     #   客户端逻辑、IndexedDB 离线队列
+├── src/                           # 后端源码
+│   ├── server.js                  #   Express 服务端主文件（路由 + 中间件）
+│   ├── database.js                #   SQLite 初始化、数据模型、字段读写
+│   ├── excel.js                   #   Excel 导入解析与导出生成
+│   ├── timeline-rollback.js       #   时间线回滚逻辑
+│   └── seed.js                    #   独立种子数据导入脚本
+├── tests/                         # 测试
+│   ├── bootstrap.test.js          #   首次启动凭据生成测试
+│   └── integration.test.js        #   全量 API 集成测试
+├── docker/                        # Docker 部署
+│   ├── Dockerfile                 #   多阶段构建（Alpine）
+│   ├── docker-compose.yml         #   Compose 编排文件
+│   ├── healthcheck.js             #   容器健康检查
+│   └── .env.example               #   环境变量模板
+├── docs/                          # 文档
+│   ├── DEPLOYMENT.md              #   完整部署与运维手册
+│   ├── DEPLOYMENT_QUICK.md        #   精简部署指南
+│   ├── DEVELOPMENT.md             #   开发说明
+│   ├── CHANGELOG.md               #   更新日志
+│   ├── TIMESTAMP_LOG.md           #   版本与上传记录
+│   └── README.md                  #   文档中心
+├── deploy/                        # systemd 部署模板
+│   └── teachingroom.service
+├── .github/workflows/             # CI/CD
+│   └── docker-publish.yml         #   自动构建推送至 GHCR
+├── package.json
+├── .dockerignore
+├── .gitignore
+└── 初始化数据表格（虚拟）.xlsx      # 首次启动演示数据
 ```
-
-超级管理员也可以在页面中手动创建、下载、上传并启用数据库备份。
-
-备份不按天数清理。自动备份默认保留最新 200 份；手动备份和恢复前备份永久保留，需由管理员在系统外按制度归档或删除。可设置 `BACKUP_MIRROR_DIR` 将备份同步到第二块磁盘或网络目录。
 
 ---
 
-## 基础数据 API
+## ⚙️ 环境变量
 
-系统会生成只读 API 令牌文件：
+| 变量 | 必填 | 默认值 | 说明 |
+|---|---|---|---|
+| `PORT` | 否 | `3000` | HTTP 监听端口 |
+| `SESSION_SECRET` | **是** | 自动生成到文件 | Session 加密密钥 |
+| `DB_PATH` | 否 | `./data/teachingroom.sqlite` | SQLite 数据库路径 |
+| `INITIAL_ADMIN_PASSWORD` | 否 | 自动生成到文件 | 首次管理员密码（≥12 位） |
+| `AUTO_BACKUP_KEEP` | 否 | `200` | 自动备份保留份数（≥7） |
+| `BACKUP_MIRROR_DIR` | 否 | 空 | 备份镜像目录 |
+| `BASE_DATA_CORS_ORIGIN` | 否 | 空 | API CORS 白名单（逗号分隔） |
+| `SKIP_SOURCE_IMPORT` | 否 | 空 | 设为 `1` 跳过首次 Excel 导入 |
 
-```text
-data/base-data-api-token.txt
-```
+---
 
-示例：
+## 🔌 基础数据 API
+
+系统自动生成只读 API 令牌到 `data/base-data-api-token.txt`，用于其他部门或系统对接。
 
 ```bash
 TOKEN="$(cat data/base-data-api-token.txt)"
 curl -H "X-API-Token: $TOKEN" http://localhost:3000/api/open/classrooms
 ```
 
-令牌只能通过 `X-API-Token` 或 `Authorization: Bearer` 传递，不接受 URL 查询参数。接口仅返回明确标记为可发布的字段；未配置来源白名单时不启用跨域。
+**接口列表：**
 
-接口：
+| 端点 | 说明 |
+|---|---|
+| `GET /api/open/meta` | API 元信息 |
+| `GET /api/open/fields` | 可公开字段定义 |
+| `GET /api/open/summary` | 汇总统计 |
+| `GET /api/open/classrooms` | 教室列表（支持筛选） |
+| `GET /api/open/classrooms/:id` | 单间教室详情 |
 
-```text
-GET /api/open/meta
-GET /api/open/fields
-GET /api/open/summary
-GET /api/open/classrooms
-GET /api/open/classrooms/:id
-```
+**常用筛选参数：** `building`、`department`、`orientation`、`planned`（`yes`/`screen`/`board`/`audio`）、`search`
 
-常用筛选参数：
+---
 
-```text
-building=X栋
-department=小学
-orientation=南
-side=南侧
-planned=yes
-planned=screen
-planned=board
-planned=audio
-search=X101
+## 📦 部署选项
+
+| 方式 | 适用场景 | 参考文档 |
+|---|---|---|
+| **Docker Compose** | 快速部署、容器化环境 | [精简部署指南](./docs/DEPLOYMENT_QUICK.md) |
+| **systemd** | Linux 服务器直接运行 | [完整部署与运维手册](./docs/DEPLOYMENT.md) |
+| **手动运行** | 开发测试 | 见本页"传统部署" |
+
+---
+
+## 🛠️ 开发
+
+详见 [开发说明](./docs/DEVELOPMENT.md)。
+
+```bash
+npm install
+npm test
+npm start
 ```
 
 ---
 
-## 部署
+## 📄 许可证
 
-仓库提供 systemd 服务模板：
-
-```text
-deploy/teachingroom.service
-```
-
-部署和维护说明见 [DEPLOYMENT.md](./DEPLOYMENT.md) 和 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)。
-
-**推荐使用 Docker 部署**，详见 [Docker 部署](#docker-部署) 一节。
+[MIT](./LICENSE) © TeachingRoom Contributors
 
 ---
 
-## 开发
-
-架构、开发流程和仓库规范见 [DEVELOPMENT.md](./DEVELOPMENT.md)。
-
----
-
-## 版本和上传记录
-
-GitHub 上传、仓库地址、提交 ID 和交接记录见 [TIMESTAMP_LOG.md](./TIMESTAMP_LOG.md)。
+<p align="center">
+  <sub>Built with Node.js, Express & SQLite · 面向校内小团队 · 约 10 人规模</sub>
+  <br>
+  <a href="https://github.com/teachingroom-manager-public/teachingroom-manager">GitHub</a> ·
+  <a href="./docs/README.md">文档中心</a> ·
+  <a href="./docs/CHANGELOG.md">更新日志</a>
+</p>

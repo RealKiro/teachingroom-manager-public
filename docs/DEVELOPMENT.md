@@ -34,29 +34,40 @@ teachingroom/
 │   ├── timeline-rollback.js
 │   └── seed.js
 ├── tests/
+│   ├── bootstrap.test.js
 │   └── integration.test.js
+├── docker/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── healthcheck.js
+│   └── .env.example
 ├── docs/
-│   ├── README.md
-│   ├── README.en.md
 │   ├── CHANGELOG.md
 │   ├── CHANGELOG.en.md
 │   ├── DEPLOYMENT.md
 │   ├── DEPLOYMENT.en.md
+│   ├── DEPLOYMENT_QUICK.md
+│   ├── DEPLOYMENT_QUICK.en.md
+│   ├── DEVELOPMENT.md
+│   ├── DEVELOPMENT.en.md
+│   ├── README.md
+│   ├── README.en.md
+│   ├── TIMESTAMP_LOG.md
+│   ├── TIMESTAMP_LOG.en.md
 │   ├── WORK_LOG_2026-05-18.md
 │   └── WORK_LOG_2026-05-18.en.md
 ├── deploy/
 │   └── teachingroom.service
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml
 ├── README.md
 ├── README.en.md
-├── DEPLOYMENT.md
-├── DEPLOYMENT.en.md
-├── DEVELOPMENT.md
-├── DEVELOPMENT.en.md
-├── TIMESTAMP_LOG.md
-├── TIMESTAMP_LOG.en.md
-├── Dockerfile
-├── docker-compose.yml
-└── package.json
+├── package.json
+├── package-lock.json
+├── .dockerignore
+├── .gitignore
+└── 初始化数据表格（虚拟）.xlsx
 ```
 
 运行目录不进入 Git：

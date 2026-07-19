@@ -7,15 +7,15 @@
 ## 使用与交付
 
 - [项目概览](../README.md)
-- [精简部署指南](../DEPLOYMENT.md)
+- [精简部署指南](./DEPLOYMENT_QUICK.md)
 - [完整部署与运维手册](./DEPLOYMENT.md)
 
 ## 开发与维护
 
-- [开发说明](../DEVELOPMENT.md)
+- [开发说明](./DEVELOPMENT.md)
 - [更新日志](./CHANGELOG.md)
 - [项目工作记录](./WORK_LOG_2026-05-18.md)
-- [版本与上传记录](../TIMESTAMP_LOG.md)
+- [版本与上传记录](./TIMESTAMP_LOG.md)
 
 ## 文档规则
 

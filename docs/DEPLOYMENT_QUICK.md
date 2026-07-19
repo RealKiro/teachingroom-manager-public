@@ -1,8 +1,8 @@
 # 部署指南
 
-[English](./DEPLOYMENT.en.md)
+[English](./DEPLOYMENT_QUICK.en.md)
 
-这是适合快速交付的精简部署指南。更完整的部署、运维、Excel、用户、审计和回滚说明见[完整部署与运维手册](./docs/DEPLOYMENT.md)。
+这是适合快速交付的精简部署指南。更完整的部署、运维、Excel、用户、审计和回滚说明见[完整部署与运维手册](./DEPLOYMENT.md)。
 
 本文说明如何在校内或内网 Linux 服务器上部署教室设备管理系统。
 
@@ -122,9 +122,9 @@ systemctl is-active teachingroom.service
 
 ```bash
 export SESSION_SECRET="$(openssl rand -hex 48)"
-docker compose up -d --build
-docker compose ps
-docker compose logs -f
+docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml logs -f
 ```
 
 Compose 文件会把运行数据保存在本地目录：

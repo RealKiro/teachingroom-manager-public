@@ -1,8 +1,8 @@
 # Deployment Guide
 
-[中文](./DEPLOYMENT.md)
+[中文](./DEPLOYMENT_QUICK.md)
 
-This concise guide is intended for quick handoff. See the [complete deployment and operations manual](./docs/DEPLOYMENT.en.md) for detailed deployment, operations, Excel, user, audit, and rollback guidance.
+This concise guide is intended for quick handoff. See the [complete deployment and operations manual](./DEPLOYMENT.en.md) for detailed deployment, operations, Excel, user, audit, and rollback guidance.
 
 This guide explains how to deploy TeachingRoom Manager on an internal Linux server.
 
