@@ -42,9 +42,10 @@ export async function buildTimelineRollbackPreview(auditId, scope = "before") {
   const unsupported = events
     .filter((event) => !supportedMutationActions.has(event.action))
     .map((event) => ({ id: event.id, action: event.action, createdAt: event.created_at }));
-  const operations = events.flatMap(eventToInverseOperations);
-  const pendingConflicts = findPendingConflicts(operations);
-  const changes = summarizeOperations(operations);
+  const nested = await Promise.all(events.map((event) => eventToInverseOperations(event)));
+  const operations = nested.flat();
+  const pendingConflicts = await findPendingConflicts(operations);
+  const changes = await summarizeOperations(operations);
   const canExecute = changes.length > 0 && unsupported.length === 0 && pendingConflicts.length === 0;
   const reason = unsupported.length
     ? "时间线中包含旧版本未保存完整逆向数据的操作，请使用对应数据库备份恢复"
@@ -75,7 +76,7 @@ export async function buildTimelineRollbackPreview(auditId, scope = "before") {
 }
 
 export async function applyTimelineRollback(auditId, actorId, scope = "before") {
-  const preview = buildTimelineRollbackPreview(auditId, scope);
+  const preview = await buildTimelineRollbackPreview(auditId, scope);
   if (!preview.canExecute) {
     const error = new Error(preview.reason || "当前状态不能执行整体还原");
     error.statusCode = 409;
