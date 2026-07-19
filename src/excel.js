@@ -1,6 +1,6 @@
 import path from "node:path";
 import ExcelJS from "exceljs";
-import { db, classroomCount, logAudit, normalizeClassroomValue, nowSql, setClassroomValue } from "./database.js";
+import { adapter, classroomCount, logAudit, normalizeClassroomValue, setClassroomValue } from "./database.js";
 
 const sourceExcel = path.join(process.cwd(), "初始化数据表格（虚拟）.xlsx");
 
@@ -21,7 +21,7 @@ const fallbackSourceFieldMap = {
 };
 
 export async function importSourceExcelIfEmpty() {
-  if (classroomCount() > 0) return { imported: false, count: classroomCount() };
+  if (await classroomCount() > 0) return { imported: false, count: await classroomCount() };
   return importSourceExcel(sourceExcel);
 }
 
@@ -29,18 +29,18 @@ export async function importSourceExcel(filePath = sourceExcel) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
 
-  const insertClassroom = db.prepare(`
+  const insertClassroom = await adapter.prepare(`
     INSERT INTO classrooms (building, room)
     VALUES (?, ?)
-    ON CONFLICT(building, room) DO UPDATE SET updated_at = ${nowSql}
+    ON CONFLICT(building, room) DO UPDATE SET updated_at = ${adapter.nowSql}
     RETURNING id
   `);
 
-  const importTx = db.transaction((rows) => {
+  const importTx = await adapter.transaction(async (rows) => {
     for (const row of rows) {
       const classroom = insertClassroom.get(row.building, row.room);
       for (const [fieldKey, value] of Object.entries(row.values)) {
-        setClassroomValue(classroom.id, fieldKey, value);
+        await setClassroomValue(classroom.id, fieldKey, value);
       }
     }
   });
@@ -48,7 +48,7 @@ export async function importSourceExcel(filePath = sourceExcel) {
   const rows = extractClassroomRows(workbook, { includeBlankBackDoorForSource: true });
 
   importTx(rows);
-  logAudit(null, "import_excel", "workbook", null, { file: path.basename(filePath), count: rows.length });
+  await logAudit(null, "import_excel", "workbook", null, { file: path.basename(filePath), count: rows.length });
   return { imported: true, count: rows.length };
 }
 

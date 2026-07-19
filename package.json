@@ -7,7 +7,8 @@
     "start": "node src/server.js",
     "dev": "NODE_ENV=development node src/server.js",
     "test": "node --check src/server.js && node --check src/database.js && node --check src/excel.js && node --check src/timeline-rollback.js && node --check public/app.js && node --test tests/*.test.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "mcp": "node src/mcp-server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

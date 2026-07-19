@@ -24,6 +24,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# 并发控制：相同 ref 的旧运行自动取消
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   # GitHub 容器仓库的默认命名空间：ghcr.io/<仓库所有者>/<镜像名>
@@ -34,18 +39,24 @@ env:
 jobs:
   # ============== Job 1: 测试 ==============
   test:
-    name: Run tests
+    name: Run tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: ${{ matrix.node-version }}
           cache: "npm"
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high || echo "⚠ npm audit found issues (non-blocking)"
 
       - name: Run tests
         run: npm test
@@ -113,9 +124,9 @@ jobs:
       # ---- （非阻塞）安全扫描 ----
       - name: Run Trivy vulnerability scanner
         if: github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@0.29.0
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version || 'latest' }}
-          format: table
-          exit-code: "0" # 不阻塞构建，仅输出报告
-          severity: HIGH,CRITICAL
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasecurity/trivy:latest \
+            image --severity HIGH,CRITICAL --no-progress \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version || 'latest' }}

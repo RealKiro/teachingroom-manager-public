@@ -6,7 +6,7 @@ import session from "express-session";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import Database from "better-sqlite3";
-import { db, dbPath, getFields, initDb, initialAdminPasswordPath, logAudit, normalizeClassroomValue, nowSql, setClassroomValue } from "./database.js";
+import { adapter, dbPath, getFields, initDb, initialAdminPasswordPath, logAudit, normalizeClassroomValue, setClassroomValue } from "./database.js";
 import { buildExportWorkbook, importSourceExcelIfEmpty, parseUploadedWorkbook } from "./excel.js";
 import { applyTimelineRollback, buildTimelineRollbackPreview } from "./timeline-rollback.js";
 
@@ -27,9 +27,9 @@ const superAdminUsername = "admin";
 fs.mkdirSync(exportsDir, { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(backupsDir, { recursive: true });
-initDb();
+await initDb();
 const importResult = process.env.SKIP_SOURCE_IMPORT === "1"
-  ? { imported: false, count: db.prepare("SELECT COUNT(*) AS count FROM classrooms").get().count }
+  ? { imported: false, count: await adapter.prepare("SELECT COUNT(*) AS count FROM classrooms").get().count }
   : await importSourceExcelIfEmpty();
 const baseDataToken = getOrCreateBaseDataToken();
 const sessionSecret = getOrCreateSessionSecret();
@@ -67,34 +67,34 @@ app.use(session({
 
 app.use(express.static(publicDir));
 
-app.options("/api/open/{*splat}", allowOpenCors, (req, res) => {
+app.options("/api/open/{*splat}", allowOpenCors, async (req, res) => {
   res.sendStatus(204);
 });
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
   res.json({ ok: true, imported: importResult });
 });
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const { username, password } = req.body || {};
-  const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1 AND deleted_at IS NULL").get(username || "");
+  const user = await adapter.prepare("SELECT * FROM users WHERE username = ? AND active = 1 AND deleted_at IS NULL").get(username || "");
   if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
     return res.status(401).json({ error: "用户名或密码不正确" });
   }
   req.session.user = safeUser(user);
-  logAudit(user.id, "login", "user", user.id);
+  await logAudit(user.id, "login", "user", user.id);
   res.json({ user: req.session.user });
 });
 
-app.post("/api/logout", requireLogin, (req, res) => {
+app.post("/api/logout", requireLogin, async (req, res) => {
   const userId = req.session.user?.id;
   req.session.destroy(() => {
-    logAudit(userId, "logout", "user", userId);
+    logAudit(userId, "logout", "user", userId).catch(() => {});
     res.json({ ok: true });
   });
 });
 
-app.get("/api/session", (req, res) => {
+app.get("/api/session", async (req, res) => {
   if (!req.session.user) return res.json({ user: null });
   const user = findActiveUser(req.session.user.id);
   if (!user) {
@@ -104,41 +104,41 @@ app.get("/api/session", (req, res) => {
   res.json({ user: req.session.user });
 });
 
-app.post("/api/me/password", requireLogin, (req, res) => {
+app.post("/api/me/password", requireLogin, async (req, res) => {
   const currentPassword = String(req.body?.currentPassword || "");
   const newPassword = String(req.body?.newPassword || "");
   if (!currentPassword || !newPassword) return res.status(400).json({ error: "当前密码和新密码不能为空" });
   if (newPassword.length < 6) return res.status(400).json({ error: "新密码至少 6 位" });
 
-  const user = db.prepare("SELECT * FROM users WHERE id = ? AND active = 1 AND deleted_at IS NULL").get(req.session.user.id);
+  const user = await adapter.prepare("SELECT * FROM users WHERE id = ? AND active = 1 AND deleted_at IS NULL").get(req.session.user.id);
   if (!user) return res.status(404).json({ error: "用户不存在或已停用" });
   if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
     return res.status(403).json({ error: "当前密码不正确" });
   }
 
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(newPassword, 10), user.id);
+  await adapter.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(newPassword, 10), user.id);
   if (user.username === superAdminUsername && fs.existsSync(initialAdminPasswordPath)) {
     fs.unlinkSync(initialAdminPasswordPath);
   }
-  sessionStore.destroyUserSessions(user.id, req.sessionID);
-  logAudit(user.id, "change_own_password", "user", user.id, { username: user.username });
+  await sessionStore.destroyUserSessions(user.id, req.sessionID);
+  await logAudit(user.id, "change_own_password", "user", user.id, { username: user.username });
   res.json({ ok: true });
 });
 
-app.get("/api/fields", requireLogin, (req, res) => {
-  res.json({ fields: getFields() });
+app.get("/api/fields", requireLogin, async (req, res) => {
+  res.json({ fields: await getFields() });
 });
 
-app.get("/api/suggestions", requireLogin, (req, res) => {
+app.get("/api/suggestions", requireLogin, async (req, res) => {
   res.json({ suggestions: getSuggestions() });
 });
 
-app.post("/api/fields", requireSuperAdmin, (req, res) => {
+app.post("/api/fields", requireSuperAdmin, async (req, res) => {
   const { key, label, group, type, options, filterable = false, editable = true, publicApi = false } = req.body || {};
   const cleanKey = String(key || "").trim().replace(/[^a-zA-Z0-9_]/g, "_");
   if (!cleanKey || !label) return res.status(400).json({ error: "字段标识和名称不能为空" });
 
-  db.prepare(`
+  await adapter.prepare(`
     INSERT INTO field_definitions (key, label, group_name, type, options_json, sort_order, filterable, editable, public_api)
     VALUES (?, ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) + 10 FROM field_definitions), 1000), ?, ?, ?)
   `).run(
@@ -151,16 +151,16 @@ app.post("/api/fields", requireSuperAdmin, (req, res) => {
     editable ? 1 : 0,
     publicApi ? 1 : 0
   );
-  logAudit(req.session.user.id, "create_field", "field", null, { key: cleanKey, label });
-  res.json({ fields: getFields() });
+  await logAudit(req.session.user.id, "create_field", "field", null, { key: cleanKey, label });
+  res.json({ fields: await getFields() });
 });
 
-app.get("/api/classrooms", requireLogin, (req, res) => {
+app.get("/api/classrooms", requireLogin, async (req, res) => {
   const result = getClassroomRecords(req.query);
   res.json(result);
 });
 
-app.post("/api/classrooms", requireAdmin, (req, res) => {
+app.post("/api/classrooms", requireAdmin, async (req, res) => {
   const values = req.body?.values;
   if (!values || typeof values !== "object" || Array.isArray(values)) {
     return res.status(400).json({ error: "教室信息不完整" });
@@ -168,12 +168,12 @@ app.post("/api/classrooms", requireAdmin, (req, res) => {
 
   const clientRequestId = normalizeClientRequestId(req.body?.clientRequestId);
   if (clientRequestId) {
-    const created = db.prepare("SELECT id FROM classrooms WHERE client_request_id = ?").get(clientRequestId);
+    const created = await adapter.prepare("SELECT id FROM classrooms WHERE client_request_id = ?").get(clientRequestId);
     if (created) {
       const record = getClassroomRecords({ ids: String(created.id) }).records[0];
       return res.status(200).json({ record, status: "created" });
     }
-    const pending = db.prepare(`
+    const pending = await adapter.prepare(`
       SELECT id, status
       FROM classroom_create_requests
       WHERE client_request_id = ?
@@ -183,36 +183,36 @@ app.post("/api/classrooms", requireAdmin, (req, res) => {
     if (pending) return res.status(202).json({ id: pending.id, status: pending.status });
   }
 
-  const fields = getFields();
+  const fields = await getFields();
   const { building, room, savedValues } = normalizeClassroomCreateValues(values, fields);
   if (!building || !room) return res.status(400).json({ error: "楼栋和教室编号不能为空" });
 
-  const existing = db.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(building, room);
+  const existing = await adapter.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(building, room);
   if (existing) return res.status(409).json({ error: "该楼栋和教室编号已存在" });
 
   const pendingDuplicate = findPendingClassroomCreateRequest(building, room);
   if (pendingDuplicate) return res.status(409).json({ error: "该教室已有待审核新增申请" });
 
   if (req.session.user.username !== superAdminUsername) {
-    const request = db.prepare(`
+    const request = await adapter.prepare(`
       INSERT INTO classroom_create_requests (submitter_id, values_json, client_request_id, created_at)
-      VALUES (?, ?, ?, ${nowSql})
+      VALUES (?, ?, ?, ${adapter.nowSql})
       RETURNING id
     `).get(req.session.user.id, JSON.stringify({ building, room, values: savedValues }), clientRequestId || null);
-    logAudit(req.session.user.id, "submit_create_classroom", "classroom_create_request", request.id, { building, room, values: savedValues });
+    await logAudit(req.session.user.id, "submit_create_classroom", "classroom_create_request", request.id, { building, room, values: savedValues });
     return res.status(202).json({ id: request.id, status: "pending" });
   }
 
-  const createTx = db.transaction(() => {
-    const classroom = db.prepare(`
+  const createTx = await adapter.transaction(async () => {
+    const classroom = await adapter.prepare(`
       INSERT INTO classrooms (building, room, client_request_id, created_at, updated_at)
-      VALUES (?, ?, ?, ${nowSql}, ${nowSql})
+      VALUES (?, ?, ?, ${adapter.nowSql}, ${adapter.nowSql})
       RETURNING id, building, room
     `).get(building, room, clientRequestId || null);
 
-    for (const [fieldKey, value] of Object.entries(savedValues)) setClassroomValue(classroom.id, fieldKey, value);
+    for (const [fieldKey, value] of Object.entries(savedValues)) await setClassroomValue(classroom.id, fieldKey, value);
 
-    logAudit(req.session.user.id, "create_classroom", "classroom", classroom.id, {
+    await logAudit(req.session.user.id, "create_classroom", "classroom", classroom.id, {
       building,
       room,
       values: savedValues
@@ -225,13 +225,13 @@ app.post("/api/classrooms", requireAdmin, (req, res) => {
   res.status(201).json({ record });
 });
 
-app.get("/api/classrooms/:id/photos", requireLogin, (req, res) => {
+app.get("/api/classrooms/:id/photos", requireLogin, async (req, res) => {
   const classroomId = Number(req.params.id);
   if (!classroomId) return res.status(400).json({ error: "教室编号不正确" });
-  const classroom = db.prepare("SELECT id FROM classrooms WHERE id = ?").get(classroomId);
+  const classroom = await adapter.prepare("SELECT id FROM classrooms WHERE id = ?").get(classroomId);
   if (!classroom) return res.status(404).json({ error: "教室不存在" });
 
-  const photos = db.prepare(`
+  const photos = await adapter.prepare(`
     SELECT p.id, p.classroom_id AS classroomId, p.uploader_id AS uploaderId, p.original_name AS originalName,
            p.mime_type AS mimeType, p.size, p.created_at AS createdAt,
            u.username AS uploaderUsername, u.display_name AS uploaderName
@@ -246,7 +246,7 @@ app.get("/api/classrooms/:id/photos", requireLogin, (req, res) => {
     url: `/api/classrooms/${classroomId}/photos/${photo.id}/file`
   }));
 
-  const pendingRequests = db.prepare(`
+  const pendingRequests = await adapter.prepare(`
     SELECT pr.id, pr.action, pr.photo_id AS photoId, pr.original_name AS originalName,
            pr.size, pr.created_at AS createdAt, u.display_name AS submitterName
     FROM classroom_photo_requests pr
@@ -261,10 +261,10 @@ app.get("/api/classrooms/:id/photos", requireLogin, (req, res) => {
   res.json({ photos, pendingRequests });
 });
 
-app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo"), (req, res) => {
+app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo"), async (req, res) => {
   const classroomId = Number(req.params.id);
   if (!classroomId) return res.status(400).json({ error: "教室编号不正确" });
-  const classroom = db.prepare("SELECT id, building, room FROM classrooms WHERE id = ?").get(classroomId);
+  const classroom = await adapter.prepare("SELECT id, building, room FROM classrooms WHERE id = ?").get(classroomId);
   if (!classroom) return res.status(404).json({ error: "教室不存在" });
   if (!req.file) return res.status(400).json({ error: "请先选择照片" });
   if (!isAllowedPhotoFile(req.file)) {
@@ -273,9 +273,9 @@ app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo")
 
   const clientRequestId = normalizeClientRequestId(req.body?.clientRequestId);
   if (clientRequestId) {
-    const existingPhoto = db.prepare("SELECT id FROM classroom_photos WHERE client_request_id = ?").get(clientRequestId);
+    const existingPhoto = await adapter.prepare("SELECT id FROM classroom_photos WHERE client_request_id = ?").get(clientRequestId);
     if (existingPhoto) return res.status(200).json({ id: existingPhoto.id, ok: true, status: "approved" });
-    const existingRequest = db.prepare(`
+    const existingRequest = await adapter.prepare(`
       SELECT id, status FROM classroom_photo_requests WHERE client_request_id = ? ORDER BY id DESC LIMIT 1
     `).get(clientRequestId);
     if (existingRequest) return res.status(200).json({ id: existingRequest.id, ok: true, status: existingRequest.status });
@@ -283,10 +283,10 @@ app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo")
 
   const originalName = String(req.file.originalname || "photo").slice(0, 240);
   if (req.session.user.username !== superAdminUsername) {
-    const request = db.prepare(`
+    const request = await adapter.prepare(`
       INSERT INTO classroom_photo_requests
         (classroom_id, submitter_id, action, original_name, mime_type, size, photo_data, client_request_id, created_at)
-      VALUES (?, ?, 'upload', ?, ?, ?, ?, ?, ${nowSql})
+      VALUES (?, ?, 'upload', ?, ?, ?, ?, ?, ${adapter.nowSql})
       RETURNING id
     `).get(
       classroomId,
@@ -297,7 +297,7 @@ app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo")
       req.file.buffer,
       clientRequestId || null
     );
-    logAudit(req.session.user.id, "submit_photo_upload", "classroom_photo_request", request.id, {
+    await logAudit(req.session.user.id, "submit_photo_upload", "classroom_photo_request", request.id, {
       classroomId,
       file: originalName,
       size: req.file.size,
@@ -307,9 +307,9 @@ app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo")
     return res.status(202).json({ id: request.id, ok: true, status: "pending" });
   }
 
-  const photo = db.prepare(`
+  const photo = await adapter.prepare(`
     INSERT INTO classroom_photos (classroom_id, uploader_id, original_name, mime_type, size, photo_data, client_request_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ${nowSql})
+    VALUES (?, ?, ?, ?, ?, ?, ?, ${adapter.nowSql})
     RETURNING id
   `).get(
     classroomId,
@@ -321,7 +321,7 @@ app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo")
     clientRequestId || null
   );
 
-  logAudit(req.session.user.id, "upload_classroom_photo", "classroom", classroomId, {
+  await logAudit(req.session.user.id, "upload_classroom_photo", "classroom", classroomId, {
     photoId: photo.id,
     file: req.file.originalname,
     size: req.file.size,
@@ -331,10 +331,10 @@ app.post("/api/classrooms/:id/photos", requireLogin, photoUpload.single("photo")
   res.status(201).json({ id: photo.id, ok: true });
 });
 
-app.get("/api/classrooms/:id/photos/:photoId/file", requireLogin, (req, res) => {
+app.get("/api/classrooms/:id/photos/:photoId/file", requireLogin, async (req, res) => {
   const classroomId = Number(req.params.id);
   const photoId = Number(req.params.photoId);
-  const photo = db.prepare(`
+  const photo = await adapter.prepare(`
     SELECT original_name AS originalName, mime_type AS mimeType, photo_data AS photoData
     FROM classroom_photos
     WHERE id = ? AND classroom_id = ? AND deleted_at IS NULL
@@ -348,40 +348,40 @@ app.get("/api/classrooms/:id/photos/:photoId/file", requireLogin, (req, res) => 
   res.send(photo.photoData);
 });
 
-app.delete("/api/classrooms/:id/photos/:photoId", requireLogin, (req, res) => {
+app.delete("/api/classrooms/:id/photos/:photoId", requireLogin, async (req, res) => {
   const classroomId = Number(req.params.id);
   const photoId = Number(req.params.photoId);
   const clientRequestId = normalizeClientRequestId(req.body?.clientRequestId);
   if (clientRequestId) {
-    const existingRequest = db.prepare(`
+    const existingRequest = await adapter.prepare(`
       SELECT id, status FROM classroom_photo_requests WHERE client_request_id = ? ORDER BY id DESC LIMIT 1
     `).get(clientRequestId);
     if (existingRequest) return res.status(200).json({ id: existingRequest.id, ok: true, status: existingRequest.status });
   }
-  const photo = db.prepare(`
+  const photo = await adapter.prepare(`
     SELECT id, uploader_id AS uploaderId, original_name AS originalName
     FROM classroom_photos
     WHERE id = ? AND classroom_id = ? AND deleted_at IS NULL
   `).get(photoId, classroomId);
   if (!photo) return res.status(404).json({ error: "照片不存在" });
-  const classroom = db.prepare("SELECT id, building, room FROM classrooms WHERE id = ?").get(classroomId);
+  const classroom = await adapter.prepare("SELECT id, building, room FROM classrooms WHERE id = ?").get(classroomId);
   if (!classroom) return res.status(404).json({ error: "教室不存在" });
 
   if (req.session.user.username !== superAdminUsername) {
-    const pending = db.prepare(`
+    const pending = await adapter.prepare(`
       SELECT id FROM classroom_photo_requests
       WHERE photo_id = ? AND action = 'delete' AND status = 'pending'
       ORDER BY id DESC LIMIT 1
     `).get(photoId);
     if (pending) return res.status(200).json({ id: pending.id, ok: true, status: "pending" });
 
-    const request = db.prepare(`
+    const request = await adapter.prepare(`
       INSERT INTO classroom_photo_requests
         (classroom_id, submitter_id, action, photo_id, original_name, client_request_id, created_at)
-      VALUES (?, ?, 'delete', ?, ?, ?, ${nowSql})
+      VALUES (?, ?, 'delete', ?, ?, ?, ${adapter.nowSql})
       RETURNING id
     `).get(classroomId, req.session.user.id, photoId, photo.originalName || "", clientRequestId || null);
-    logAudit(req.session.user.id, "submit_photo_delete", "classroom_photo_request", request.id, {
+    await logAudit(req.session.user.id, "submit_photo_delete", "classroom_photo_request", request.id, {
       classroomId,
       photoId,
       building: classroom.building,
@@ -390,17 +390,17 @@ app.delete("/api/classrooms/:id/photos/:photoId", requireLogin, (req, res) => {
     return res.status(202).json({ id: request.id, ok: true, status: "pending" });
   }
 
-  db.prepare(`UPDATE classroom_photos SET deleted_at = ${nowSql} WHERE id = ?`).run(photoId);
-  logAudit(req.session.user.id, "delete_classroom_photo", "classroom", classroomId, { photoId });
+  await adapter.prepare(`UPDATE classroom_photos SET deleted_at = ${adapter.nowSql} WHERE id = ?`).run(photoId);
+  await logAudit(req.session.user.id, "delete_classroom_photo", "classroom", classroomId, { photoId });
   res.json({ ok: true });
 });
 
-app.post("/api/classroom-photo-requests/:id/review", requireAdmin, (req, res) => {
+app.post("/api/classroom-photo-requests/:id/review", requireAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const { decision, note } = req.body || {};
   if (!["approved", "rejected"].includes(decision)) return res.status(400).json({ error: "审核结果不正确" });
 
-  const request = db.prepare(`
+  const request = await adapter.prepare(`
     SELECT pr.*, c.building, c.room
     FROM classroom_photo_requests pr
     JOIN classrooms c ON c.id = pr.classroom_id
@@ -412,14 +412,14 @@ app.post("/api/classroom-photo-requests/:id/review", requireAdmin, (req, res) =>
     return res.status(403).json({ error: "提交人不能审核自己的照片申请，请由其他管理员审核" });
   }
 
-  const reviewTx = db.transaction(() => {
+  const reviewTx = await adapter.transaction(async () => {
     let photoId = request.photo_id || null;
     if (decision === "approved" && request.action === "upload") {
       if (!request.photo_data) throw Object.assign(new Error("待审核照片内容不存在"), { statusCode: 409 });
-      const photo = db.prepare(`
+      const photo = await adapter.prepare(`
         INSERT INTO classroom_photos
           (classroom_id, uploader_id, original_name, mime_type, size, photo_data, client_request_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ${nowSql})
+        VALUES (?, ?, ?, ?, ?, ?, ?, ${adapter.nowSql})
         RETURNING id
       `).get(
         request.classroom_id,
@@ -433,18 +433,18 @@ app.post("/api/classroom-photo-requests/:id/review", requireAdmin, (req, res) =>
       photoId = photo.id;
     }
     if (decision === "approved" && request.action === "delete") {
-      const photo = db.prepare("SELECT id FROM classroom_photos WHERE id = ? AND classroom_id = ? AND deleted_at IS NULL").get(request.photo_id, request.classroom_id);
+      const photo = await adapter.prepare("SELECT id FROM classroom_photos WHERE id = ? AND classroom_id = ? AND deleted_at IS NULL").get(request.photo_id, request.classroom_id);
       if (!photo) throw Object.assign(new Error("照片已不存在或已经删除"), { statusCode: 409 });
-      db.prepare(`UPDATE classroom_photos SET deleted_at = ${nowSql} WHERE id = ?`).run(request.photo_id);
+      await adapter.prepare(`UPDATE classroom_photos SET deleted_at = ${adapter.nowSql} WHERE id = ?`).run(request.photo_id);
     }
 
-    db.prepare(`
+    await adapter.prepare(`
       UPDATE classroom_photo_requests
-      SET status = ?, photo_id = ?, reviewer_id = ?, review_note = ?, reviewed_at = ${nowSql}, photo_data = NULL
+      SET status = ?, photo_id = ?, reviewer_id = ?, review_note = ?, reviewed_at = ${adapter.nowSql}, photo_data = NULL
       WHERE id = ?
     `).run(decision, photoId, req.session.user.id, String(note || "").trim(), requestId);
 
-    logAudit(req.session.user.id, `review_photo_${request.action}_${decision}`, "classroom_photo_request", requestId, {
+    await logAudit(req.session.user.id, `review_photo_${request.action}_${decision}`, "classroom_photo_request", requestId, {
       classroomId: request.classroom_id,
       photoId,
       file: request.original_name,
@@ -470,7 +470,7 @@ app.post("/api/import-review", requireLogin, upload.single("file"), async (req, 
   }
 });
 
-app.get("/api/open/meta", allowOpenCors, requireBaseDataToken, (req, res) => {
+app.get("/api/open/meta", allowOpenCors, requireBaseDataToken, async (req, res) => {
   res.json({
     name: "TeachingRoom Base Data API",
     version: "0.1.0",
@@ -484,13 +484,13 @@ app.get("/api/open/meta", allowOpenCors, requireBaseDataToken, (req, res) => {
   });
 });
 
-app.get("/api/open/fields", allowOpenCors, requireBaseDataToken, (req, res) => {
+app.get("/api/open/fields", allowOpenCors, requireBaseDataToken, async (req, res) => {
   res.json({
     fields: getPublicFields().map(toPublicField)
   });
 });
 
-app.get("/api/open/summary", allowOpenCors, requireBaseDataToken, (req, res) => {
+app.get("/api/open/summary", allowOpenCors, requireBaseDataToken, async (req, res) => {
   const publishedKeys = new Set(getPublicFields().map((field) => field.key));
   const { records, summary, filters } = getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
@@ -501,7 +501,7 @@ app.get("/api/open/summary", allowOpenCors, requireBaseDataToken, (req, res) => 
   });
 });
 
-app.get("/api/open/classrooms", allowOpenCors, requireBaseDataToken, (req, res) => {
+app.get("/api/open/classrooms", allowOpenCors, requireBaseDataToken, async (req, res) => {
   const publishedKeys = new Set(getPublicFields().map((field) => field.key));
   const { records, summary, filters } = getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
@@ -513,7 +513,7 @@ app.get("/api/open/classrooms", allowOpenCors, requireBaseDataToken, (req, res) 
   });
 });
 
-app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, (req, res) => {
+app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, async (req, res) => {
   const id = Number(req.params.id);
   const { records } = getClassroomRecords({});
   const record = records.find((item) => item.id === id || item.values.room === req.params.id);
@@ -522,19 +522,19 @@ app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, (req, r
   res.json({ data: toPublicClassroom(record, publishedKeys), updatedAt: latestClassroomUpdatedAt() });
 });
 
-app.post("/api/change-requests", requireLogin, (req, res) => {
+app.post("/api/change-requests", requireLogin, async (req, res) => {
   const { classroomId, changes, reason } = req.body || {};
   const id = Number(classroomId);
   if (!id || typeof changes !== "object" || Array.isArray(changes)) {
     return res.status(400).json({ error: "变更内容不完整" });
   }
 
-  const classroom = db.prepare("SELECT * FROM classrooms WHERE id = ?").get(id);
+  const classroom = await adapter.prepare("SELECT * FROM classrooms WHERE id = ?").get(id);
   if (!classroom) return res.status(404).json({ error: "教室不存在" });
 
   const clientRequestId = normalizeClientRequestId(req.body?.clientRequestId);
   if (clientRequestId) {
-    const existingRequest = db.prepare(`
+    const existingRequest = await adapter.prepare(`
       SELECT id, status
       FROM change_requests
       WHERE client_request_id = ?
@@ -544,7 +544,7 @@ app.post("/api/change-requests", requireLogin, (req, res) => {
     if (existingRequest) return res.status(200).json(existingRequest);
   }
 
-  const fields = new Map(getFields().map((field) => [field.key, field]));
+  const fields = new Map(await getFields().map((field) => [field.key, field]));
   const currentValues = getClassroomValues(id);
   const items = [];
   for (const [fieldKey, newValueRaw] of Object.entries(changes)) {
@@ -564,28 +564,28 @@ app.post("/api/change-requests", requireLogin, (req, res) => {
     });
   }
 
-  const createRequest = db.transaction(() => {
-    const request = db.prepare(`
+  const createRequest = await adapter.transaction(async () => {
+    const request = await adapter.prepare(`
       INSERT INTO change_requests (classroom_id, submitter_id, reason, client_request_id, created_at)
-      VALUES (?, ?, ?, ?, ${nowSql})
+      VALUES (?, ?, ?, ?, ${adapter.nowSql})
       RETURNING id
     `).get(id, req.session.user.id, String(reason || "").trim(), clientRequestId || null);
 
-    const insertItem = db.prepare(`
+    const insertItem = await adapter.prepare(`
       INSERT INTO change_request_items (request_id, field_key, old_value, new_value)
       VALUES (?, ?, ?, ?)
     `);
     for (const item of items) insertItem.run(request.id, item.fieldKey, item.oldValue, item.newValue);
-    logAudit(req.session.user.id, "submit_change_request", "change_request", request.id, { classroomId: id, items });
+    await logAudit(req.session.user.id, "submit_change_request", "change_request", request.id, { classroomId: id, items });
     return request.id;
   });
 
   res.status(201).json({ id: createRequest(), status: "pending" });
 });
 
-app.get("/api/change-requests", requireLogin, (req, res) => {
+app.get("/api/change-requests", requireLogin, async (req, res) => {
   const status = String(req.query.status || "pending");
-  const requests = db.prepare(`
+  const requests = await adapter.prepare(`
     SELECT cr.*, c.building, c.room,
            COALESCE(fd.value, c.room) AS front_door,
            COALESCE(bd.value, '') AS back_door,
@@ -600,7 +600,7 @@ app.get("/api/change-requests", requireLogin, (req, res) => {
     ORDER BY cr.created_at DESC
   `).all(status, status);
 
-  const itemStmt = db.prepare(`
+  const itemStmt = await adapter.prepare(`
     SELECT cri.field_key AS fieldKey, fd.label, cri.old_value AS oldValue, cri.new_value AS newValue
     FROM change_request_items cri
     JOIN field_definitions fd ON fd.key = cri.field_key
@@ -621,14 +621,14 @@ app.get("/api/change-requests", requireLogin, (req, res) => {
   res.json({ requests: combined });
 });
 
-app.post("/api/classroom-create-requests/:id/review", requireAdmin, (req, res) => {
+app.post("/api/classroom-create-requests/:id/review", requireAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const { decision, note } = req.body || {};
   if (!["approved", "rejected"].includes(decision)) {
     return res.status(400).json({ error: "审核结果不正确" });
   }
 
-  const request = db.prepare("SELECT * FROM classroom_create_requests WHERE id = ?").get(requestId);
+  const request = await adapter.prepare("SELECT * FROM classroom_create_requests WHERE id = ?").get(requestId);
   if (!request) return res.status(404).json({ error: "新增教室申请不存在" });
   if (request.status !== "pending") return res.status(400).json({ error: "该申请已经处理过" });
   if (request.submitter_id === req.session.user.id && req.session.user.username !== superAdminUsername) {
@@ -638,31 +638,31 @@ app.post("/api/classroom-create-requests/:id/review", requireAdmin, (req, res) =
   const payload = parseClassroomCreatePayload(request.values_json);
   if (!payload.building || !payload.room) return res.status(400).json({ error: "新增教室申请内容不完整" });
 
-  const reviewTx = db.transaction(() => {
+  const reviewTx = await adapter.transaction(async () => {
     let classroomId = null;
     if (decision === "approved") {
-      const existing = db.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(payload.building, payload.room);
+      const existing = await adapter.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(payload.building, payload.room);
       if (existing) {
         const error = new Error("该楼栋和教室编号已存在，不能通过新增申请");
         error.statusCode = 409;
         throw error;
       }
-      const classroom = db.prepare(`
+      const classroom = await adapter.prepare(`
         INSERT INTO classrooms (building, room, client_request_id, created_at, updated_at)
-        VALUES (?, ?, ?, ${nowSql}, ${nowSql})
+        VALUES (?, ?, ?, ${adapter.nowSql}, ${adapter.nowSql})
         RETURNING id
       `).get(payload.building, payload.room, request.client_request_id || null);
       classroomId = classroom.id;
-      for (const [fieldKey, value] of Object.entries(payload.values)) setClassroomValue(classroom.id, fieldKey, value);
+      for (const [fieldKey, value] of Object.entries(payload.values)) await setClassroomValue(classroom.id, fieldKey, value);
     }
 
-    db.prepare(`
+    await adapter.prepare(`
       UPDATE classroom_create_requests
-      SET status = ?, reviewer_id = ?, review_note = ?, reviewed_at = ${nowSql}
+      SET status = ?, reviewer_id = ?, review_note = ?, reviewed_at = ${adapter.nowSql}
       WHERE id = ?
     `).run(decision, req.session.user.id, String(note || "").trim(), requestId);
 
-    logAudit(req.session.user.id, `review_create_${decision}`, "classroom_create_request", requestId, {
+    await logAudit(req.session.user.id, `review_create_${decision}`, "classroom_create_request", requestId, {
       note,
       classroomId,
       building: payload.building,
@@ -674,21 +674,21 @@ app.post("/api/classroom-create-requests/:id/review", requireAdmin, (req, res) =
   res.json({ ok: true });
 });
 
-app.post("/api/change-requests/:id/review", requireAdmin, (req, res) => {
+app.post("/api/change-requests/:id/review", requireAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const { decision, note } = req.body || {};
   if (!["approved", "rejected"].includes(decision)) {
     return res.status(400).json({ error: "审核结果不正确" });
   }
 
-  const request = db.prepare("SELECT * FROM change_requests WHERE id = ?").get(requestId);
+  const request = await adapter.prepare("SELECT * FROM change_requests WHERE id = ?").get(requestId);
   if (!request) return res.status(404).json({ error: "变更申请不存在" });
   if (request.status !== "pending") return res.status(400).json({ error: "该申请已经处理过" });
   if (request.submitter_id === req.session.user.id && req.session.user.username !== superAdminUsername) {
     return res.status(403).json({ error: "提交人不能审核自己的变更，请由其他管理员审核" });
   }
 
-  const reviewItems = db.prepare(`
+  const reviewItems = await adapter.prepare(`
     SELECT field_key AS fieldKey, old_value AS oldValue, new_value AS newValue
     FROM change_request_items
     WHERE request_id = ?
@@ -697,7 +697,7 @@ app.post("/api/change-requests/:id/review", requireAdmin, (req, res) => {
     const currentValues = getClassroomValues(request.classroom_id);
     const conflicts = reviewItems.filter((item) => (currentValues[item.fieldKey] || "") !== (item.oldValue || ""));
     if (conflicts.length) {
-      const labels = new Map(getFields().map((field) => [field.key, field.label]));
+      const labels = new Map(await getFields().map((field) => [field.key, field.label]));
       return res.status(409).json({
         error: `正式数据已经变化，请拒绝旧申请后重新提交：${conflicts.map((item) => labels.get(item.fieldKey) || item.fieldKey).join("、")}`,
         conflicts: conflicts.map((item) => ({
@@ -709,33 +709,33 @@ app.post("/api/change-requests/:id/review", requireAdmin, (req, res) => {
     }
   }
 
-  const reviewTx = db.transaction(() => {
+  const reviewTx = await adapter.transaction(async () => {
     if (decision === "approved") {
-      for (const item of reviewItems) setClassroomValue(request.classroom_id, item.fieldKey, item.newValue);
-      db.prepare(`UPDATE classrooms SET updated_at = ${nowSql} WHERE id = ?`).run(request.classroom_id);
+      for (const item of reviewItems) await setClassroomValue(request.classroom_id, item.fieldKey, item.newValue);
+      await adapter.prepare(`UPDATE classrooms SET updated_at = ${adapter.nowSql} WHERE id = ?`).run(request.classroom_id);
     }
 
-    db.prepare(`
+    await adapter.prepare(`
       UPDATE change_requests
-      SET status = ?, reviewer_id = ?, review_note = ?, reviewed_at = ${nowSql}
+      SET status = ?, reviewer_id = ?, review_note = ?, reviewed_at = ${adapter.nowSql}
       WHERE id = ?
     `).run(decision, req.session.user.id, String(note || "").trim(), requestId);
 
-    logAudit(req.session.user.id, `review_${decision}`, "change_request", requestId, { note });
+    await logAudit(req.session.user.id, `review_${decision}`, "change_request", requestId, { note });
   });
 
   reviewTx();
   res.json({ ok: true });
 });
 
-app.get("/api/rollback/change-requests/:id/preview", requireSuperAdmin, (req, res) => {
+app.get("/api/rollback/change-requests/:id/preview", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.query.scope);
   const preview = buildRollbackPreview(requestId, scope);
   res.json(preview);
 });
 
-app.post("/api/rollback/change-requests/:id", requireSuperAdmin, (req, res) => {
+app.post("/api/rollback/change-requests/:id", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.body?.scope);
   const preview = buildRollbackPreview(requestId, scope);
@@ -743,16 +743,16 @@ app.post("/api/rollback/change-requests/:id", requireSuperAdmin, (req, res) => {
     return res.status(409).json({ error: preview.reason || "当前状态不能执行回滚", preview });
   }
 
-  const applyRollback = db.transaction(() => {
+  const applyRollback = await adapter.transaction(async () => {
     const changedClassroomIds = new Set();
     for (const change of preview.changes) {
-      setClassroomValue(change.classroomId, change.fieldKey, change.restoreValue);
+      await setClassroomValue(change.classroomId, change.fieldKey, change.restoreValue);
       changedClassroomIds.add(change.classroomId);
     }
-    const updateClassroom = db.prepare(`UPDATE classrooms SET updated_at = ${nowSql} WHERE id = ?`);
+    const updateClassroom = await adapter.prepare(`UPDATE classrooms SET updated_at = ${adapter.nowSql} WHERE id = ?`);
     for (const classroomId of changedClassroomIds) updateClassroom.run(classroomId);
 
-    logAudit(req.session.user.id, scope === "single" ? "rollback_change_request" : "rollback_to_before", "change_request", requestId, {
+    await logAudit(req.session.user.id, scope === "single" ? "rollback_change_request" : "rollback_to_before", "change_request", requestId, {
       scope,
       sourceRequestId: requestId,
       requestsIncluded: preview.requestsIncluded,
@@ -774,14 +774,14 @@ app.post("/api/rollback/change-requests/:id", requireSuperAdmin, (req, res) => {
   res.json({ ok: true, summary: preview.summary });
 });
 
-app.get("/api/rollback/classroom-create-requests/:id/preview", requireSuperAdmin, (req, res) => {
+app.get("/api/rollback/classroom-create-requests/:id/preview", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.query.scope);
   const preview = buildCreateRollbackPreview(requestId, scope);
   res.json(preview);
 });
 
-app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, (req, res) => {
+app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.body?.scope);
   const preview = buildCreateRollbackPreview(requestId, scope);
@@ -789,11 +789,11 @@ app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, (req,
     return res.status(409).json({ error: preview.reason || "当前状态不能执行回滚", preview });
   }
 
-  const applyRollback = db.transaction(() => {
-    const deleteClassroom = db.prepare("DELETE FROM classrooms WHERE id = ?");
+  const applyRollback = await adapter.transaction(async () => {
+    const deleteClassroom = await adapter.prepare("DELETE FROM classrooms WHERE id = ?");
     for (const change of preview.changes) deleteClassroom.run(change.classroomId);
 
-    logAudit(req.session.user.id, scope === "single" ? "rollback_create_request" : "rollback_create_to_before", "classroom_create_request", requestId, {
+    await logAudit(req.session.user.id, scope === "single" ? "rollback_create_request" : "rollback_create_to_before", "classroom_create_request", requestId, {
       scope,
       sourceRequestId: requestId,
       requestsIncluded: preview.requestsIncluded,
@@ -815,11 +815,11 @@ app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, (req,
   res.json({ ok: true, summary: preview.summary });
 });
 
-app.get("/api/rollback/timeline/:auditId/preview", requireSuperAdmin, (req, res) => {
+app.get("/api/rollback/timeline/:auditId/preview", requireSuperAdmin, async (req, res) => {
   res.json(buildTimelineRollbackPreview(Number(req.params.auditId), req.query.scope));
 });
 
-app.post("/api/rollback/timeline/:auditId", requireSuperAdmin, (req, res, next) => {
+app.post("/api/rollback/timeline/:auditId", requireSuperAdmin, async (req, res, next) => {
   try {
     const preview = applyTimelineRollback(Number(req.params.auditId), req.session.user.id, req.body?.scope);
     res.json({ ok: true, summary: preview.summary });
@@ -828,7 +828,7 @@ app.post("/api/rollback/timeline/:auditId", requireSuperAdmin, (req, res, next) 
   }
 });
 
-app.get("/api/backups", requireSuperAdmin, (req, res) => {
+app.get("/api/backups", requireSuperAdmin, async (req, res) => {
   res.json({
     backups: listDatabaseBackups(),
     policy: {
@@ -839,17 +839,17 @@ app.get("/api/backups", requireSuperAdmin, (req, res) => {
   });
 });
 
-app.post("/api/backups", requireSuperAdmin, (req, res, next) => {
+app.post("/api/backups", requireSuperAdmin, async (req, res, next) => {
   try {
     const backup = createDatabaseBackup("manual");
-    logAudit(req.session.user.id, "create_database_backup", "database_backup", null, backup);
+    await logAudit(req.session.user.id, "create_database_backup", "database_backup", null, backup);
     res.status(201).json({ backup });
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/backups/:file/download", requireSuperAdmin, (req, res, next) => {
+app.get("/api/backups/:file/download", requireSuperAdmin, async (req, res, next) => {
   try {
     const backup = getDatabaseBackup(req.params.file);
     res.download(backup.path, backup.file);
@@ -858,7 +858,7 @@ app.get("/api/backups/:file/download", requireSuperAdmin, (req, res, next) => {
   }
 });
 
-app.post("/api/backups/:file/restore", requireSuperAdmin, (req, res, next) => {
+app.post("/api/backups/:file/restore", requireSuperAdmin, async (req, res, next) => {
   try {
     const backup = getDatabaseBackup(req.params.file);
     queueDatabaseRestore(backup.path, req.session.user.id, {
@@ -872,7 +872,7 @@ app.post("/api/backups/:file/restore", requireSuperAdmin, (req, res, next) => {
   }
 });
 
-app.post("/api/backups/upload-restore", requireSuperAdmin, databaseUpload.single("database"), (req, res, next) => {
+app.post("/api/backups/upload-restore", requireSuperAdmin, databaseUpload.single("database"), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "请上传 SQLite 数据库文件" });
     validateDatabaseFile(req.file.path);
@@ -889,8 +889,8 @@ app.post("/api/backups/upload-restore", requireSuperAdmin, databaseUpload.single
   }
 });
 
-app.get("/api/users", requireSuperAdmin, (req, res) => {
-  const users = db.prepare(`
+app.get("/api/users", requireSuperAdmin, async (req, res) => {
+  const users = await adapter.prepare(`
     SELECT u.id, u.username, u.display_name AS displayName, u.role, u.active, u.created_at AS createdAt,
            (
              SELECT COUNT(*) FROM change_requests cr WHERE cr.submitter_id = u.id
@@ -913,7 +913,7 @@ app.get("/api/users", requireSuperAdmin, (req, res) => {
   res.json({ users });
 });
 
-app.post("/api/users", requireSuperAdmin, (req, res) => {
+app.post("/api/users", requireSuperAdmin, async (req, res) => {
   const { username, displayName, role, password } = req.body || {};
   const cleanUsername = String(username || "").trim();
   const cleanDisplayName = String(displayName || "").trim();
@@ -924,21 +924,21 @@ app.post("/api/users", requireSuperAdmin, (req, res) => {
     return res.status(400).json({ error: "用户信息不完整" });
   }
   if (String(password).length < 6) return res.status(400).json({ error: "密码至少 6 位" });
-  const exists = db.prepare("SELECT id FROM users WHERE username = ? AND deleted_at IS NULL").get(cleanUsername);
+  const exists = await adapter.prepare("SELECT id FROM users WHERE username = ? AND deleted_at IS NULL").get(cleanUsername);
   if (exists) return res.status(409).json({ error: "账号已存在" });
 
-  const user = db.prepare(`
+  const user = await adapter.prepare(`
     INSERT INTO users (username, display_name, role, password_hash)
     VALUES (?, ?, ?, ?)
     RETURNING id, username, display_name AS displayName, role, active, created_at AS createdAt
   `).get(cleanUsername, cleanDisplayName, role, bcrypt.hashSync(password, 10));
-  logAudit(req.session.user.id, "create_user", "user", user.id, { username: user.username, role: user.role });
+  await logAudit(req.session.user.id, "create_user", "user", user.id, { username: user.username, role: user.role });
   res.status(201).json({ user });
 });
 
-app.patch("/api/users/:id", requireSuperAdmin, (req, res) => {
+app.patch("/api/users/:id", requireSuperAdmin, async (req, res) => {
   const userId = Number(req.params.id);
-  const existing = db.prepare("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL").get(userId);
+  const existing = await adapter.prepare("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL").get(userId);
   if (!existing) return res.status(404).json({ error: "用户不存在" });
 
   const displayName = String(req.body?.displayName || "").trim();
@@ -951,55 +951,55 @@ app.patch("/api/users/:id", requireSuperAdmin, (req, res) => {
     return res.status(400).json({ error: "超级管理员不能停用或降级" });
   }
 
-  const user = db.prepare(`
+  const user = await adapter.prepare(`
     UPDATE users
     SET display_name = ?, role = ?, active = ?
     WHERE id = ?
     RETURNING id, username, display_name AS displayName, role, active, created_at AS createdAt
   `).get(displayName, role, active, userId);
-  sessionStore.destroyUserSessions(userId, userId === req.session.user.id ? req.sessionID : "");
+  await sessionStore.destroyUserSessions(userId, userId === req.session.user.id ? req.sessionID : "");
   if (userId === req.session.user.id) req.session.user = safeUser({ ...existing, display_name: displayName, role, active });
-  logAudit(req.session.user.id, "update_user", "user", userId, { username: user.username, role, active });
+  await logAudit(req.session.user.id, "update_user", "user", userId, { username: user.username, role, active });
   res.json({ user });
 });
 
-app.post("/api/users/:id/password", requireSuperAdmin, (req, res) => {
+app.post("/api/users/:id/password", requireSuperAdmin, async (req, res) => {
   const userId = Number(req.params.id);
   const password = String(req.body?.password || "");
   if (password.length < 6) return res.status(400).json({ error: "密码至少 6 位" });
-  const user = db.prepare("SELECT id, username FROM users WHERE id = ? AND deleted_at IS NULL").get(userId);
+  const user = await adapter.prepare("SELECT id, username FROM users WHERE id = ? AND deleted_at IS NULL").get(userId);
   if (!user) return res.status(404).json({ error: "用户不存在" });
 
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(password, 10), userId);
-  sessionStore.destroyUserSessions(userId, userId === req.session.user.id ? req.sessionID : "");
-  logAudit(req.session.user.id, "reset_user_password", "user", userId, { username: user.username });
+  await adapter.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(password, 10), userId);
+  await sessionStore.destroyUserSessions(userId, userId === req.session.user.id ? req.sessionID : "");
+  await logAudit(req.session.user.id, "reset_user_password", "user", userId, { username: user.username });
   res.json({ ok: true });
 });
 
-app.delete("/api/users/:id", requireSuperAdmin, (req, res) => {
+app.delete("/api/users/:id", requireSuperAdmin, async (req, res) => {
   const userId = Number(req.params.id);
-  const user = db.prepare("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL").get(userId);
+  const user = await adapter.prepare("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL").get(userId);
   if (!user) return res.status(404).json({ error: "用户不存在" });
   if (user.username === superAdminUsername) return res.status(400).json({ error: "超级管理员不能删除" });
 
   const deletedUsername = `${user.username}__deleted_${user.id}_${Date.now()}`;
-  db.prepare(`
+  await adapter.prepare(`
     UPDATE users
-    SET username = ?, active = 0, deleted_at = ${nowSql}
+    SET username = ?, active = 0, deleted_at = ${adapter.nowSql}
     WHERE id = ?
   `).run(deletedUsername, userId);
-  sessionStore.destroyUserSessions(userId);
-  logAudit(req.session.user.id, "delete_user", "user", userId, { username: user.username });
+  await sessionStore.destroyUserSessions(userId);
+  await logAudit(req.session.user.id, "delete_user", "user", userId, { username: user.username });
   res.json({ ok: true });
 });
 
-app.get("/api/audit-logs", requireSuperAdmin, (req, res) => {
+app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
   const search = String(req.query.search || "").trim().toLowerCase();
   const action = String(req.query.action || "").trim();
   const actorId = Number(req.query.actorId || 0);
   const page = Math.max(1, Number(req.query.page || 1));
   const pageSize = Math.min(200, Math.max(20, Number(req.query.pageSize || 100)));
-  const rows = db.prepare(`
+  const rows = await adapter.prepare(`
     SELECT al.id, al.actor_id AS actorId, al.action, al.target_type AS targetType, al.target_id AS targetId,
            al.detail_json AS detailJson, al.created_at AS createdAt,
            actor.username AS actorUsername, actor.display_name AS actorName,
@@ -1021,8 +1021,8 @@ app.get("/api/audit-logs", requireSuperAdmin, (req, res) => {
     ORDER BY al.created_at DESC, al.id DESC
   `).all(action, action, actorId, actorId);
 
-  const fields = new Map(getFields().map((field) => [field.key, field.label]));
-  const itemStmt = db.prepare(`
+  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
+  const itemStmt = await adapter.prepare(`
     SELECT cri.field_key AS fieldKey, cri.old_value AS oldValue, cri.new_value AS newValue
     FROM change_request_items cri
     WHERE cri.request_id = ?
@@ -1072,7 +1072,7 @@ app.get("/api/audit-logs", requireSuperAdmin, (req, res) => {
   const total = matchingLogs.length;
   const offset = (page - 1) * pageSize;
   const logs = matchingLogs.slice(offset, offset + pageSize);
-  const actors = db.prepare(`
+  const actors = await adapter.prepare(`
     SELECT DISTINCT u.id, u.username, u.display_name AS displayName
     FROM audit_logs al
     JOIN users u ON u.id = al.actor_id
@@ -1086,7 +1086,7 @@ app.get("/api/export", requireLogin, async (req, res, next) => {
   try {
     const { records, summary } = getClassroomRecords(req.query);
     const allSummary = getClassroomRecords({}).summary;
-    const fields = getFields();
+    const fields = await getFields();
     const workbook = await buildExportWorkbook(records, fields, {
       query: req.query,
       summary,
@@ -1094,7 +1094,7 @@ app.get("/api/export", requireLogin, async (req, res, next) => {
     });
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = encodeURIComponent(`教室设备清单-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    logAudit(req.session.user.id, "export_excel", "workbook", null, { count: records.length, query: req.query });
+    await logAudit(req.session.user.id, "export_excel", "workbook", null, { count: records.length, query: req.query });
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${filename}`);
     res.send(Buffer.from(buffer));
@@ -1152,8 +1152,8 @@ function requireSuperAdmin(req, res, next) {
   });
 }
 
-function findActiveUser(userId) {
-  return db.prepare("SELECT * FROM users WHERE id = ? AND active = 1 AND deleted_at IS NULL").get(Number(userId));
+async function findActiveUser(userId) {
+  return await adapter.prepare("SELECT * FROM users WHERE id = ? AND active = 1 AND deleted_at IS NULL").get(Number(userId));
 }
 
 function allowOpenCors(req, res, next) {
@@ -1248,8 +1248,8 @@ function parseClassroomCreatePayload(valuesJson) {
   };
 }
 
-function findPendingClassroomCreateRequest(building, room) {
-  const pendingRequests = db.prepare(`
+async function findPendingClassroomCreateRequest(building, room) {
+  const pendingRequests = await adapter.prepare(`
     SELECT id, values_json AS valuesJson
     FROM classroom_create_requests
     WHERE status = 'pending'
@@ -1261,8 +1261,8 @@ function findPendingClassroomCreateRequest(building, room) {
   });
 }
 
-function getClassroomCreateReviewRequests(status) {
-  const rows = db.prepare(`
+async function getClassroomCreateReviewRequests(status) {
+  const rows = await adapter.prepare(`
     SELECT ccr.id, ccr.submitter_id, ccr.status, ccr.reason, ccr.values_json AS valuesJson,
            ccr.reviewer_id, ccr.review_note, ccr.created_at, ccr.reviewed_at,
            u.display_name AS submitter_name, ru.display_name AS reviewer_name
@@ -1272,7 +1272,7 @@ function getClassroomCreateReviewRequests(status) {
     WHERE (? = 'all' OR ccr.status = ?)
     ORDER BY ccr.created_at DESC, ccr.id DESC
   `).all(status, status);
-  const fields = getFields();
+  const fields = await getFields();
   const fieldsByKey = new Map(fields.map((field) => [field.key, field]));
   return rows.map((row) => {
     const payload = parseClassroomCreatePayload(row.valuesJson);
@@ -1299,8 +1299,8 @@ function getClassroomCreateReviewRequests(status) {
   });
 }
 
-function getClassroomPhotoReviewRequests(status) {
-  return db.prepare(`
+async function getClassroomPhotoReviewRequests(status) {
+  return await adapter.prepare(`
     SELECT pr.id, pr.classroom_id, pr.submitter_id, pr.action, pr.photo_id, pr.original_name,
            pr.size, pr.status, pr.reviewer_id, pr.review_note, pr.created_at, pr.reviewed_at,
            c.building, c.room, COALESCE(fd.value, c.room) AS front_door,
@@ -1406,15 +1406,15 @@ function safeUser(user) {
   };
 }
 
-function getClassroomValues(classroomId) {
-  const rows = db.prepare("SELECT field_key, value FROM classroom_values WHERE classroom_id = ?").all(classroomId);
+async function getClassroomValues(classroomId) {
+  const rows = await adapter.prepare("SELECT field_key, value FROM classroom_values WHERE classroom_id = ?").all(classroomId);
   return Object.fromEntries(rows.map((row) => [row.field_key, row.value]));
 }
 
-function findPendingFieldConflicts(classroomId, fieldKeys) {
+async function findPendingFieldConflicts(classroomId, fieldKeys) {
   if (!fieldKeys.length) return [];
   const placeholders = fieldKeys.map(() => "?").join(",");
-  return db.prepare(`
+  return await adapter.prepare(`
     SELECT DISTINCT cr.id AS requestId, cri.field_key AS fieldKey, fd.label
     FROM change_requests cr
     JOIN change_request_items cri ON cri.request_id = cr.id
@@ -1508,8 +1508,8 @@ function buildCreateRollbackPreview(requestId, scope) {
   };
 }
 
-function getApprovedRequest(requestId) {
-  return db.prepare(`
+async function getApprovedRequest(requestId) {
+  return await adapter.prepare(`
     SELECT cr.*, c.building, c.room,
            COALESCE(fd.value, c.room) AS frontDoor,
            COALESCE(bd.value, '') AS backDoor
@@ -1521,8 +1521,8 @@ function getApprovedRequest(requestId) {
   `).get(requestId);
 }
 
-function getApprovedCreateRequest(requestId) {
-  const row = db.prepare(`
+async function getApprovedCreateRequest(requestId) {
+  const row = await adapter.prepare(`
     SELECT *
     FROM classroom_create_requests
     WHERE id = ? AND status = 'approved'
@@ -1530,9 +1530,9 @@ function getApprovedCreateRequest(requestId) {
   return row ? hydrateApprovedCreateRequest(row) : null;
 }
 
-function getApprovedCreateRequestsFrom(target) {
+async function getApprovedCreateRequestsFrom(target) {
   const targetTime = target.reviewed_at || target.created_at;
-  return db.prepare(`
+  return await adapter.prepare(`
     SELECT *
     FROM classroom_create_requests
     WHERE status = 'approved'
@@ -1558,13 +1558,13 @@ function hydrateApprovedCreateRequest(row) {
   };
 }
 
-function findClassroomForCreateRequest(request, payload) {
+async function findClassroomForCreateRequest(request, payload) {
   if (request.client_request_id) {
-    const classroom = db.prepare("SELECT id FROM classrooms WHERE client_request_id = ?").get(request.client_request_id);
+    const classroom = await adapter.prepare("SELECT id FROM classrooms WHERE client_request_id = ?").get(request.client_request_id);
     if (classroom) return classroom;
   }
   if (!payload.building || !payload.room) return null;
-  return db.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(payload.building, payload.room);
+  return await adapter.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(payload.building, payload.room);
 }
 
 function buildCreateRollbackChanges(requests) {
@@ -1583,10 +1583,10 @@ function buildCreateRollbackChanges(requests) {
     .sort((a, b) => a.roomLabel.localeCompare(b.roomLabel, "zh-CN"));
 }
 
-function findCreateRollbackConflicts(changes) {
+async function findCreateRollbackConflicts(changes) {
   if (!changes.length) return [];
-  const changeCountStmt = db.prepare("SELECT COUNT(*) AS count FROM change_requests WHERE classroom_id = ?");
-  const photoCountStmt = db.prepare("SELECT COUNT(*) AS count FROM classroom_photos WHERE classroom_id = ? AND deleted_at IS NULL");
+  const changeCountStmt = await adapter.prepare("SELECT COUNT(*) AS count FROM change_requests WHERE classroom_id = ?");
+  const photoCountStmt = await adapter.prepare("SELECT COUNT(*) AS count FROM classroom_photos WHERE classroom_id = ? AND deleted_at IS NULL");
   return changes.flatMap((change) => {
     const changeCount = changeCountStmt.get(change.classroomId).count;
     const photoCount = photoCountStmt.get(change.classroomId).count;
@@ -1604,9 +1604,9 @@ function findCreateRollbackConflicts(changes) {
   });
 }
 
-function getApprovedRequestsFrom(target) {
+async function getApprovedRequestsFrom(target) {
   const targetTime = target.reviewed_at || target.created_at;
-  return db.prepare(`
+  return await adapter.prepare(`
     SELECT cr.*, c.building, c.room,
            COALESCE(fd.value, c.room) AS frontDoor,
            COALESCE(bd.value, '') AS backDoor
@@ -1623,8 +1623,8 @@ function getApprovedRequestsFrom(target) {
   `).all(targetTime, targetTime, target.id);
 }
 
-function buildSingleRollbackChanges(request) {
-  const fields = new Map(getFields().map((field) => [field.key, field.label]));
+async function buildSingleRollbackChanges(request) {
+  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
   const currentValues = getClassroomValues(request.classroom_id);
   return getRequestItems(request.id).map((item) => ({
     classroomId: request.classroom_id,
@@ -1640,8 +1640,8 @@ function buildSingleRollbackChanges(request) {
   }));
 }
 
-function buildBeforeRollbackChanges(requests) {
-  const fields = new Map(getFields().map((field) => [field.key, field.label]));
+async function buildBeforeRollbackChanges(requests) {
+  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
   const changesByField = new Map();
   for (const request of requests) {
     const roomLabel = `${request.building} ${request.frontDoor || request.room || ""}${request.backDoor ? ` / ${request.backDoor}` : ""}`;
@@ -1671,17 +1671,17 @@ function buildBeforeRollbackChanges(requests) {
   return [...changesByField.values()].sort((a, b) => a.roomLabel.localeCompare(b.roomLabel, "zh-CN") || a.label.localeCompare(b.label, "zh-CN"));
 }
 
-function getRequestItems(requestId) {
-  return db.prepare(`
+async function getRequestItems(requestId) {
+  return await adapter.prepare(`
     SELECT field_key AS fieldKey, old_value AS oldValue, new_value AS newValue
     FROM change_request_items
     WHERE request_id = ?
   `).all(requestId);
 }
 
-function findPendingRollbackConflicts(changes) {
+async function findPendingRollbackConflicts(changes) {
   if (!changes.length) return [];
-  const pending = db.prepare(`
+  const pending = await adapter.prepare(`
     SELECT cr.id AS requestId, cr.classroom_id AS classroomId, cri.field_key AS fieldKey
     FROM change_requests cr
     JOIN change_request_items cri ON cri.request_id = cr.id
@@ -1714,7 +1714,7 @@ function buildClassroomCreatePayloadFromImportRow(row, fields) {
 }
 
 async function createChangeRequestsFromWorkbook(filePath, originalName, submitterId) {
-  const currentFields = getFields();
+  const currentFields = await getFields();
   const rows = await parseUploadedWorkbook(filePath, currentFields);
   if (!rows.length) {
     return { importedRows: 0, requestsCreated: 0, changedFields: 0, unmatchedRows: [], message: "没有识别到可导入的教室行" };
@@ -1722,9 +1722,9 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
 
   const fields = new Map(currentFields.map((field) => [field.key, field]));
   const editableKeys = new Set([...fields.values()].filter((field) => field.editable).map((field) => field.key));
-  const submitter = db.prepare("SELECT role FROM users WHERE id = ? AND deleted_at IS NULL").get(submitterId);
+  const submitter = await adapter.prepare("SELECT role FROM users WHERE id = ? AND deleted_at IS NULL").get(submitterId);
   const canCreateClassroom = submitter?.role === "admin";
-  const classrooms = db.prepare("SELECT id, building, room FROM classrooms").all();
+  const classrooms = await adapter.prepare("SELECT id, building, room FROM classrooms").all();
   const classroomByKey = new Map();
   for (const classroom of classrooms) {
     classroomByKey.set(`${classroom.building}|${classroom.room}`, classroom);
@@ -1738,7 +1738,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
     if (values.front_door) classroomByKey.set(values.front_door, classroom);
     if (values.back_door) classroomByKey.set(values.back_door, classroom);
   }
-  const pendingFieldKeys = new Set(db.prepare(`
+  const pendingFieldKeys = new Set(await adapter.prepare(`
     SELECT cr.classroom_id AS classroomId, cri.field_key AS fieldKey
     FROM change_requests cr
     JOIN change_request_items cri ON cri.request_id = cr.id
@@ -1762,7 +1762,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
         unmatchedRows.push({ building: row.building, room: row.room, frontDoor: row.values.front_door || "", backDoor: row.values.back_door || "" });
         continue;
       }
-      const existing = db.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(createPayload.building, createPayload.room);
+      const existing = await adapter.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(createPayload.building, createPayload.room);
       if (existing) {
         unmatchedRows.push({ building: row.building, room: row.room, frontDoor: row.values.front_door || "", backDoor: row.values.back_door || "" });
         continue;
@@ -1790,19 +1790,19 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
     if (items.length) requestGroups.push({ classroomId: classroom.id, items });
   }
 
-  const importTx = db.transaction(() => {
-    const insertRequest = db.prepare(`
+  const importTx = await adapter.transaction(async () => {
+    const insertRequest = await adapter.prepare(`
       INSERT INTO change_requests (classroom_id, submitter_id, reason, created_at)
-      VALUES (?, ?, ?, ${nowSql})
+      VALUES (?, ?, ?, ${adapter.nowSql})
       RETURNING id
     `);
-    const insertItem = db.prepare(`
+    const insertItem = await adapter.prepare(`
       INSERT INTO change_request_items (request_id, field_key, old_value, new_value)
       VALUES (?, ?, ?, ?)
     `);
-    const insertCreateRequest = db.prepare(`
+    const insertCreateRequest = await adapter.prepare(`
       INSERT INTO classroom_create_requests (submitter_id, values_json, client_request_id, reason, created_at)
-      VALUES (?, ?, ?, ?, ${nowSql})
+      VALUES (?, ?, ?, ?, ${adapter.nowSql})
       RETURNING id
     `);
 
@@ -1821,7 +1821,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
         `Excel上传：${originalName}`
       );
       createRequestIds.push(request.id);
-      logAudit(submitterId, "submit_create_classroom", "classroom_create_request", request.id, {
+      await logAudit(submitterId, "submit_create_classroom", "classroom_create_request", request.id, {
         source: "excel",
         file: originalName,
         building: group.building,
@@ -1830,7 +1830,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
       });
     }
 
-    logAudit(submitterId, "upload_excel_review", "workbook", null, {
+    await logAudit(submitterId, "upload_excel_review", "workbook", null, {
       file: originalName,
       importedRows: rows.length,
       requestsCreated: requestGroups.length,
@@ -1862,11 +1862,11 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
   };
 }
 
-function getClassroomRecords(filters = {}, options = {}) {
-  const fields = getFields();
-  const classrooms = db.prepare("SELECT * FROM classrooms ORDER BY building, room").all();
-  const valueRows = db.prepare("SELECT classroom_id, field_key, value FROM classroom_values").all();
-  const pendingRows = db.prepare(`
+async function getClassroomRecords(filters = {}, options = {}) {
+  const fields = await getFields();
+  const classrooms = await adapter.prepare("SELECT * FROM classrooms ORDER BY building, room").all();
+  const valueRows = await adapter.prepare("SELECT classroom_id, field_key, value FROM classroom_values").all();
+  const pendingRows = await adapter.prepare(`
     SELECT classroom_id, COUNT(*) AS count
     FROM (
       SELECT classroom_id FROM change_requests WHERE status = 'pending'
@@ -1875,7 +1875,7 @@ function getClassroomRecords(filters = {}, options = {}) {
     )
     GROUP BY classroom_id
   `).all();
-  const photoRows = db.prepare(`
+  const photoRows = await adapter.prepare(`
     SELECT classroom_id, COUNT(*) AS count
     FROM classroom_photos
     WHERE deleted_at IS NULL
@@ -1920,8 +1920,8 @@ function getClassroomRecords(filters = {}, options = {}) {
   };
 }
 
-function getPendingCreateSummaryRecords() {
-  return db.prepare(`
+async function getPendingCreateSummaryRecords() {
+  return await adapter.prepare(`
     SELECT id, values_json AS valuesJson, created_at AS createdAt
     FROM classroom_create_requests
     WHERE status = 'pending'
@@ -1982,13 +1982,13 @@ function parseIdFilter(value) {
   return ids.length ? new Set(ids) : null;
 }
 
-function getSuggestions() {
+async function getSuggestions() {
   const baseSuggestionKeys = [
     "class_name",
     "current_screen",
     "current_board"
   ];
-  const fields = getFields();
+  const fields = await getFields();
   const suggestionKeys = [...new Set([
     ...baseSuggestionKeys,
     ...fields.filter((field) => field.editable && field.type === "select").map((field) => field.key)
@@ -2003,7 +2003,7 @@ function getSuggestions() {
   }
 
   const placeholders = suggestionKeys.map(() => "?").join(",");
-  const rows = db.prepare(`
+  const rows = await adapter.prepare(`
     SELECT field_key, value
     FROM classroom_values
     WHERE field_key IN (${placeholders}) AND TRIM(value) <> ''
@@ -2072,7 +2072,7 @@ function listDatabaseBackups() {
 
 function createDatabaseBackup(kind = "manual") {
   fs.mkdirSync(backupsDir, { recursive: true });
-  db.pragma("wal_checkpoint(TRUNCATE)");
+  adapter.pragma("wal_checkpoint(TRUNCATE)");
   const safeKind = String(kind).replace(/[^a-z_]/g, "_") || "manual";
   const file = `teachingroom-${beijingTimestampForFile()}-${safeKind}.sqlite`;
   const backupPath = path.join(backupsDir, file);
@@ -2145,17 +2145,17 @@ function validateDatabaseFile(filePath) {
   }
 }
 
-function queueDatabaseRestore(sourcePath, actorId, detail) {
+async function queueDatabaseRestore(sourcePath, actorId, detail) {
   validateDatabaseFile(sourcePath);
   const preRestore = createDatabaseBackup("before_restore");
   const restoreSource = path.join(uploadsDir, `restore-${Date.now()}-${crypto.randomBytes(6).toString("hex")}.sqlite`);
   fs.copyFileSync(sourcePath, restoreSource);
-  logAudit(actorId, "restore_database_backup", "database_backup", null, { ...detail, preRestoreBackup: preRestore.file });
+  await logAudit(actorId, "restore_database_backup", "database_backup", null, { ...detail, preRestoreBackup: preRestore.file });
 
   setTimeout(() => {
     try {
-      db.pragma("wal_checkpoint(TRUNCATE)");
-      db.close();
+      adapter.pragma("wal_checkpoint(TRUNCATE)");
+      adapter.close();
       for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(`${dbPath}${suffix}`, { force: true });
       fs.copyFileSync(restoreSource, dbPath);
       writeRestoreAuditToRestoredDatabase({ ...detail, preRestoreBackup: preRestore.file });
@@ -2179,7 +2179,7 @@ function writeRestoreAuditToRestoredDatabase(detail) {
     if (hasSessions) restoredDb.prepare("DELETE FROM user_sessions").run();
     restoredDb.prepare(`
       INSERT INTO audit_logs (actor_id, action, target_type, target_id, detail_json, created_at)
-      VALUES (NULL, 'restore_database_backup', 'database_backup', NULL, ?, ${nowSql})
+      VALUES (NULL, 'restore_database_backup', 'database_backup', NULL, ?, ${adapter.nowSql})
     `).run(JSON.stringify(detail));
   } finally {
     restoredDb?.close();
@@ -2243,38 +2243,38 @@ function formatBeijingDateTime(value) {
 
 function createSqliteSessionStore() {
   const Store = session.Store;
-  const cleanupExpired = () => {
-    db.prepare("DELETE FROM user_sessions WHERE expires_at <= ?").run(Date.now());
+  const cleanupExpired = async () => {
+    await adapter.prepare("DELETE FROM user_sessions WHERE expires_at <= ?").run(Date.now());
   };
 
   class SqliteSessionStore extends Store {
     constructor() {
       super();
-      this.getStmt = db.prepare("SELECT data, expires_at FROM user_sessions WHERE sid = ?");
-      this.setStmt = db.prepare(`
+      this.getStmt = adapter.prepare("SELECT data, expires_at FROM user_sessions WHERE sid = ?");
+      this.setStmt = adapter.prepare(`
         INSERT INTO user_sessions (sid, data, user_id, expires_at, updated_at)
-        VALUES (?, ?, ?, ?, ${nowSql})
+        VALUES (?, ?, ?, ?, ${adapter.nowSql})
         ON CONFLICT(sid) DO UPDATE SET
           data = excluded.data,
           user_id = excluded.user_id,
           expires_at = excluded.expires_at,
           updated_at = excluded.updated_at
       `);
-      this.destroyStmt = db.prepare("DELETE FROM user_sessions WHERE sid = ?");
-      this.touchStmt = db.prepare(`
+      this.destroyStmt = adapter.prepare("DELETE FROM user_sessions WHERE sid = ?");
+      this.touchStmt = adapter.prepare(`
         UPDATE user_sessions
-        SET expires_at = ?, updated_at = ${nowSql}
+        SET expires_at = ?, updated_at = ${adapter.nowSql}
         WHERE sid = ?
       `);
-      this.destroyUserSessionsStmt = db.prepare("DELETE FROM user_sessions WHERE user_id = ? AND (? = '' OR sid <> ?)");
+      this.destroyUserSessionsStmt = adapter.prepare("DELETE FROM user_sessions WHERE user_id = ? AND (? = '' OR sid <> ?)");
     }
 
-    get(sid, callback) {
+    async get(sid, callback) {
       try {
-        const row = this.getStmt.get(sid);
+        const row = await this.getStmt.get(sid);
         if (!row) return callback(null, null);
         if (row.expires_at <= Date.now()) {
-          this.destroyStmt.run(sid);
+          await this.destroyStmt.run(sid);
           return callback(null, null);
         }
         return callback(null, JSON.parse(row.data));
@@ -2283,35 +2283,35 @@ function createSqliteSessionStore() {
       }
     }
 
-    set(sid, sessionData, callback) {
+    async set(sid, sessionData, callback) {
       try {
-        this.setStmt.run(sid, JSON.stringify(sessionData), sessionData?.user?.id || null, getSessionExpiresAt(sessionData));
+        await this.setStmt.run(sid, JSON.stringify(sessionData), sessionData?.user?.id || null, getSessionExpiresAt(sessionData));
         callback?.(null);
       } catch (error) {
         callback?.(error);
       }
     }
 
-    destroy(sid, callback) {
+    async destroy(sid, callback) {
       try {
-        this.destroyStmt.run(sid);
+        await this.destroyStmt.run(sid);
         callback?.(null);
       } catch (error) {
         callback?.(error);
       }
     }
 
-    touch(sid, sessionData, callback) {
+    async touch(sid, sessionData, callback) {
       try {
-        this.touchStmt.run(getSessionExpiresAt(sessionData), sid);
+        await this.touchStmt.run(getSessionExpiresAt(sessionData), sid);
         callback?.(null);
       } catch (error) {
         callback?.(error);
       }
     }
 
-    destroyUserSessions(userId, exceptSid = "") {
-      this.destroyUserSessionsStmt.run(Number(userId), String(exceptSid || ""), String(exceptSid || ""));
+    async destroyUserSessions(userId, exceptSid = "") {
+      await this.destroyUserSessionsStmt.run(Number(userId), String(exceptSid || ""), String(exceptSid || ""));
     }
   }
 
@@ -2343,8 +2343,8 @@ function toPublicField(field) {
   };
 }
 
-function getPublicFields() {
-  return getFields().filter((field) => field.publicApi);
+async function getPublicFields() {
+  return await getFields().filter((field) => field.publicApi);
 }
 
 function toPublicClassroom(record, publishedKeys = new Set(getPublicFields().map((field) => field.key))) {
@@ -2380,8 +2380,8 @@ function toPublicClassroom(record, publishedKeys = new Set(getPublicFields().map
   };
 }
 
-function latestClassroomUpdatedAt() {
-  return db.prepare("SELECT MAX(updated_at) AS updatedAt FROM classrooms").get().updatedAt || null;
+async function latestClassroomUpdatedAt() {
+  return await adapter.prepare("SELECT MAX(updated_at) AS updatedAt FROM classrooms").get().updatedAt || null;
 }
 
 function formatBuildingSide(value) {

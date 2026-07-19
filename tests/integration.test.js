@@ -15,7 +15,7 @@ process.env.BACKUPS_DIR = path.join(tempDir, "backups");
 process.env.INITIAL_ADMIN_PASSWORD = "test-admin-password";
 
 const { app, pruneDatabaseBackups } = await import("../src/server.js");
-const { db, getFields, logAudit, setClassroomValue } = await import("../src/database.js");
+const { adapter, getFields, logAudit, setClassroomValue } = await import("../src/database.js");
 const { buildExportWorkbook, parseUploadedWorkbook } = await import("../src/excel.js");
 
 const server = await new Promise((resolve) => {
@@ -56,7 +56,7 @@ class ApiClient {
 
 test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
-  db.close();
+  await adapter.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -165,7 +165,7 @@ test("critical review, session, rollback, API and Excel workflows", async () => 
     changes: { current_screen: "待审核屏幕" }
   });
   assert.equal(staleRequest.response.status, 201);
-  setClassroomValue(classroom.id, "current_screen", "后台已更新屏幕");
+  await setClassroomValue(classroom.id, "current_screen", "后台已更新屏幕");
   const staleApproval = await adminTwo.json(`/api/change-requests/${staleRequest.data.id}/review`, "POST", { decision: "approved" });
   assert.equal(staleApproval.response.status, 409);
   const staleReject = await adminTwo.json(`/api/change-requests/${staleRequest.data.id}/review`, "POST", { decision: "rejected" });
@@ -192,7 +192,7 @@ test("critical review, session, rollback, API and Excel workflows", async () => 
   assert.equal(photosAfterReview.data.photos.length, 1);
   assert.equal(photosAfterReview.data.pendingRequests.length, 0);
 
-  const approvedAudit = db.prepare(`
+  const approvedAudit = await adapter.prepare(`
     SELECT id FROM audit_logs
     WHERE action = 'review_approved' AND target_id = ?
     ORDER BY id DESC LIMIT 1
@@ -212,7 +212,7 @@ test("critical review, session, rollback, API and Excel workflows", async () => 
     publicApi: false
   });
   assert.equal(fieldCreate.response.status, 200, JSON.stringify(fieldCreate.data));
-  const fields = getFields();
+  const fields = await getFields();
   const recordValues = Object.fromEntries(fields.map((field) => [field.key, ""]));
   Object.assign(recordValues, {
     building: "T栋",
@@ -247,7 +247,7 @@ test("critical review, session, rollback, API and Excel workflows", async () => 
   assert.equal(privateSearch.data.count, 0);
 
   for (let index = 0; index < 45; index += 1) {
-    logAudit(adminOneUser.id, "integration_pagination", "test", index, { marker: `audit-${index}` });
+    await logAudit(adminOneUser.id, "integration_pagination", "test", index, { marker: `audit-${index}` });
   }
   const firstAuditPage = await superAdmin.json("/api/audit-logs?action=integration_pagination&page=1&pageSize=20");
   assert.equal(firstAuditPage.response.status, 200);

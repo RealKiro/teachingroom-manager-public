@@ -1,4 +1,4 @@
-import { db, getFields, logAudit, nowSql, setClassroomValue } from "./database.js";
+import { adapter, getFields, logAudit, setClassroomValue } from "./database.js";
 
 const supportedMutationActions = new Set([
   "review_approved",
@@ -22,7 +22,7 @@ const knownMutationActions = new Set([
   "bulk_set_monitoring_for_standard_exam_room"
 ]);
 
-export function buildTimelineRollbackPreview(auditId, scope = "before") {
+export async function buildTimelineRollbackPreview(auditId, scope = "before") {
   const target = getAuditLog(auditId);
   if (!target || !knownMutationActions.has(target.action)) {
     const error = new Error("只能从正式数据修改记录发起整体还原");
@@ -33,7 +33,7 @@ export function buildTimelineRollbackPreview(auditId, scope = "before") {
   const normalizedScope = scope === "single" ? "single" : "before";
   const events = normalizedScope === "single"
     ? [target]
-    : db.prepare(`
+    : await adapter.prepare(`
       SELECT * FROM audit_logs
       WHERE id >= ?
       ORDER BY id DESC
@@ -73,7 +73,7 @@ export function buildTimelineRollbackPreview(auditId, scope = "before") {
   };
 }
 
-export function applyTimelineRollback(auditId, actorId, scope = "before") {
+export async function applyTimelineRollback(auditId, actorId, scope = "before") {
   const preview = buildTimelineRollbackPreview(auditId, scope);
   if (!preview.canExecute) {
     const error = new Error(preview.reason || "当前状态不能执行整体还原");
@@ -82,27 +82,27 @@ export function applyTimelineRollback(auditId, actorId, scope = "before") {
     throw error;
   }
 
-  const apply = db.transaction(() => {
+  const apply = await adapter.transaction(async () => {
     const touchedClassrooms = new Set();
     for (const operation of preview.operations) {
       if (operation.type === "set_value") {
-        setClassroomValue(operation.classroomId, operation.fieldKey, operation.value);
+        await setClassroomValue(operation.classroomId, operation.fieldKey, operation.value);
         touchedClassrooms.add(operation.classroomId);
       } else if (operation.type === "delete_photo") {
-        db.prepare(`UPDATE classroom_photos SET deleted_at = ${nowSql} WHERE id = ?`).run(operation.photoId);
+        await adapter.prepare(`UPDATE classroom_photos SET deleted_at = ${adapter.nowSql} WHERE id = ?`).run(operation.photoId);
         touchedClassrooms.add(operation.classroomId);
       } else if (operation.type === "restore_photo") {
-        db.prepare("UPDATE classroom_photos SET deleted_at = NULL WHERE id = ?").run(operation.photoId);
+        await adapter.prepare("UPDATE classroom_photos SET deleted_at = NULL WHERE id = ?").run(operation.photoId);
         touchedClassrooms.add(operation.classroomId);
       } else if (operation.type === "delete_classroom") {
-        db.prepare("DELETE FROM classrooms WHERE id = ?").run(operation.classroomId);
+        await adapter.prepare("DELETE FROM classrooms WHERE id = ?").run(operation.classroomId);
         touchedClassrooms.delete(operation.classroomId);
       }
     }
 
-    const updateClassroom = db.prepare(`UPDATE classrooms SET updated_at = ${nowSql} WHERE id = ?`);
+    const updateClassroom = await adapter.prepare(`UPDATE classrooms SET updated_at = ${adapter.nowSql} WHERE id = ?`);
     for (const classroomId of touchedClassrooms) updateClassroom.run(classroomId);
-    logAudit(actorId, preview.scope === "single" ? "rollback_timeline_single" : "rollback_timeline_to_before", "audit_log", preview.targetAuditId, {
+    await logAudit(actorId, preview.scope === "single" ? "rollback_timeline_single" : "rollback_timeline_to_before", "audit_log", preview.targetAuditId, {
       targetAuditId: preview.targetAuditId,
       eventsIncluded: preview.eventsIncluded,
       classroomCount: preview.classroomCount,
@@ -115,16 +115,16 @@ export function applyTimelineRollback(auditId, actorId, scope = "before") {
   return preview;
 }
 
-function getAuditLog(auditId) {
-  return db.prepare("SELECT * FROM audit_logs WHERE id = ?").get(Number(auditId));
+async function getAuditLog(auditId) {
+  return await adapter.prepare("SELECT * FROM audit_logs WHERE id = ?").get(Number(auditId));
 }
 
-function eventToInverseOperations(event) {
+async function eventToInverseOperations(event) {
   const detail = parseJson(event.detail_json);
   if (event.action === "review_approved") {
-    const request = db.prepare("SELECT classroom_id FROM change_requests WHERE id = ?").get(event.target_id);
+    const request = await adapter.prepare("SELECT classroom_id FROM change_requests WHERE id = ?").get(event.target_id);
     if (!request) return [];
-    return db.prepare(`
+    return await adapter.prepare(`
       SELECT field_key AS fieldKey, old_value AS value
       FROM change_request_items WHERE request_id = ?
     `).all(event.target_id).map((item) => ({
@@ -149,7 +149,7 @@ function eventToInverseOperations(event) {
 
   if (["delete_classroom_photo", "review_photo_delete_approved"].includes(event.action)) {
     const photoId = Number(detail.photoId || 0);
-    const photo = photoId ? db.prepare("SELECT classroom_id FROM classroom_photos WHERE id = ?").get(photoId) : null;
+    const photo = photoId ? await adapter.prepare("SELECT classroom_id FROM classroom_photos WHERE id = ?").get(photoId) : null;
     const classroomId = Number(detail.classroomId || photo?.classroom_id || event.target_id || 0);
     return photoId ? [{ type: "restore_photo", auditId: event.id, classroomId, photoId, file: detail.file || "" }] : [];
   }
@@ -166,11 +166,11 @@ function eventToInverseOperations(event) {
   return [];
 }
 
-function summarizeOperations(operations) {
-  const fields = new Map(getFields().map((field) => [field.key, field.label]));
-  const currentValue = db.prepare("SELECT value FROM classroom_values WHERE classroom_id = ? AND field_key = ?");
-  const classroom = db.prepare("SELECT building, room FROM classrooms WHERE id = ?");
-  const photo = db.prepare("SELECT original_name, deleted_at FROM classroom_photos WHERE id = ?");
+async function summarizeOperations(operations) {
+  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
+  const currentValue = await adapter.prepare("SELECT value FROM classroom_values WHERE classroom_id = ? AND field_key = ?");
+  const classroom = await adapter.prepare("SELECT building, room FROM classrooms WHERE id = ?");
+  const photo = await adapter.prepare("SELECT original_name, deleted_at FROM classroom_photos WHERE id = ?");
   const simulatedValues = new Map();
   const simulatedPhotos = new Map();
   const deletedClassrooms = new Set();
@@ -226,11 +226,11 @@ function summarizeOperations(operations) {
   return changes;
 }
 
-function findPendingConflicts(operations) {
+async function findPendingConflicts(operations) {
   const classroomIds = [...new Set(operations.map((operation) => operation.classroomId).filter(Boolean))];
   if (!classroomIds.length) return [];
   const placeholders = classroomIds.map(() => "?").join(",");
-  return db.prepare(`
+  return await adapter.prepare(`
     SELECT 'change' AS type, id, classroom_id AS classroomId FROM change_requests
     WHERE status = 'pending' AND classroom_id IN (${placeholders})
     UNION ALL
