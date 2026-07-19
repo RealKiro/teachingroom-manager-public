@@ -50,7 +50,7 @@ RUN apk add --no-cache --virtual .minify-deps npm && \
       public/index.html && \
     \
     # 压缩 CSS
-    csso public/styles.css public/styles.css && \
+    csso -i public/styles.css -o public/styles.css && \
     \
     # 压缩 JS
     terser public/app.js \
