@@ -98,7 +98,7 @@ app.post("/api/logout", requireLogin, async (req, res) => {
 
 app.get("/api/session", async (req, res) => {
   if (!req.session.user) return res.json({ user: null });
-  const user = findActiveUser(req.session.user.id);
+  const user = await findActiveUser(req.session.user.id);
   if (!user) {
     return req.session.destroy(() => res.json({ user: null }));
   }
@@ -737,14 +737,14 @@ app.post("/api/change-requests/:id/review", requireAdmin, async (req, res) => {
 app.get("/api/rollback/change-requests/:id/preview", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.query.scope);
-  const preview = buildRollbackPreview(requestId, scope);
+  const preview = await buildRollbackPreview(requestId, scope);
   res.json(preview);
 });
 
 app.post("/api/rollback/change-requests/:id", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.body?.scope);
-  const preview = buildRollbackPreview(requestId, scope);
+  const preview = await buildRollbackPreview(requestId, scope);
   if (!preview.canExecute) {
     return res.status(409).json({ error: preview.reason || "当前状态不能执行回滚", preview });
   }
@@ -783,14 +783,14 @@ app.post("/api/rollback/change-requests/:id", requireSuperAdmin, async (req, res
 app.get("/api/rollback/classroom-create-requests/:id/preview", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.query.scope);
-  const preview = buildCreateRollbackPreview(requestId, scope);
+  const preview = await buildCreateRollbackPreview(requestId, scope);
   res.json(preview);
 });
 
 app.post("/api/rollback/classroom-create-requests/:id", requireSuperAdmin, async (req, res) => {
   const requestId = Number(req.params.id);
   const scope = normalizeRollbackScope(req.body?.scope);
-  const preview = buildCreateRollbackPreview(requestId, scope);
+  const preview = await buildCreateRollbackPreview(requestId, scope);
   if (!preview.canExecute) {
     return res.status(409).json({ error: preview.reason || "当前状态不能执行回滚", preview });
   }
@@ -828,7 +828,7 @@ app.get("/api/rollback/timeline/:auditId/preview", requireSuperAdmin, async (req
 
 app.post("/api/rollback/timeline/:auditId", requireSuperAdmin, async (req, res, next) => {
   try {
-    const preview = applyTimelineRollback(Number(req.params.auditId), req.session.user.id, req.body?.scope);
+    const preview = await applyTimelineRollback(Number(req.params.auditId), req.session.user.id, req.body?.scope);
     res.json({ ok: true, summary: preview.summary });
   } catch (error) {
     next(error);
@@ -868,7 +868,7 @@ app.get("/api/backups/:file/download", requireSuperAdmin, async (req, res, next)
 app.post("/api/backups/:file/restore", requireSuperAdmin, async (req, res, next) => {
   try {
     const backup = getDatabaseBackup(req.params.file);
-    queueDatabaseRestore(backup.path, req.session.user.id, {
+    await queueDatabaseRestore(backup.path, req.session.user.id, {
       source: "server_backup",
       file: backup.file,
       size: backup.size
@@ -883,7 +883,7 @@ app.post("/api/backups/upload-restore", requireSuperAdmin, databaseUpload.single
   try {
     if (!req.file) return res.status(400).json({ error: "请上传 SQLite 数据库文件" });
     validateDatabaseFile(req.file.path);
-    queueDatabaseRestore(req.file.path, req.session.user.id, {
+    await queueDatabaseRestore(req.file.path, req.session.user.id, {
       source: "upload",
       file: req.file.originalname,
       size: req.file.size
@@ -1497,8 +1497,8 @@ async function buildCreateRollbackPreview(requestId, scope) {
     throw error;
   }
 
-  const requests = scope === "before" ? getApprovedCreateRequestsFrom(target) : [target];
-  const changes = buildCreateRollbackChanges(requests);
+  const requests = scope === "before" ? await getApprovedCreateRequestsFrom(target) : [target];
+  const changes = await buildCreateRollbackChanges(requests);
   const conflicts = await findCreateRollbackConflicts(changes);
   const canExecute = changes.length > 0 && conflicts.length === 0;
   const reason = !changes.length
@@ -1546,7 +1546,7 @@ async function getApprovedCreateRequest(requestId) {
     FROM classroom_create_requests
     WHERE id = ? AND status = 'approved'
   `).get(requestId);
-  return row ? hydrateApprovedCreateRequest(row) : null;
+  return row ? await hydrateApprovedCreateRequest(row) : null;
 }
 
 async function getApprovedCreateRequestsFrom(target) {
@@ -1565,7 +1565,7 @@ async function getApprovedCreateRequestsFrom(target) {
 
 async function hydrateApprovedCreateRequest(row) {
   const payload = parseClassroomCreatePayload(row.values_json);
-  const classroom = findClassroomForCreateRequest(row, payload);
+  const classroom = await findClassroomForCreateRequest(row, payload);
   return {
     ...row,
     building: payload.building,
@@ -1645,7 +1645,7 @@ async function getApprovedRequestsFrom(target) {
 async function buildSingleRollbackChanges(request) {
   const fields = new Map((await getFields()).map((field) => [field.key, field.label]));
   const currentValues = await getClassroomValues(request.classroom_id);
-  return getRequestItems(request.id).map((item) => ({
+  (await getRequestItems(request.id)).map((item) => ({
     classroomId: request.classroom_id,
     requestId: request.id,
     roomLabel: `${request.building} ${request.frontDoor || request.room || ""}${request.backDoor ? ` / ${request.backDoor}` : ""}`,
@@ -1664,7 +1664,7 @@ async function buildBeforeRollbackChanges(requests) {
   const changesByField = new Map();
   for (const request of requests) {
     const roomLabel = `${request.building} ${request.frontDoor || request.room || ""}${request.backDoor ? ` / ${request.backDoor}` : ""}`;
-    for (const item of getRequestItems(request.id)) {
+    for (const item of await getRequestItems(request.id)) {
       const key = `${request.classroom_id}|${item.fieldKey}`;
       const existing = changesByField.get(key);
       if (existing) {
@@ -2335,7 +2335,7 @@ function createSqliteSessionStore() {
     }
   }
 
-  cleanupExpired();
+  cleanupExpired().catch(() => {});
   const cleanupTimer = setInterval(cleanupExpired, 1000 * 60 * 30);
   cleanupTimer.unref?.();
 

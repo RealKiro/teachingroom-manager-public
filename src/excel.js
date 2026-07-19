@@ -22,7 +22,7 @@ const fallbackSourceFieldMap = {
 
 export async function importSourceExcelIfEmpty() {
   if (await classroomCount() > 0) return { imported: false, count: await classroomCount() };
-  return importSourceExcel(sourceExcel);
+  return await importSourceExcel(sourceExcel);
 }
 
 export async function importSourceExcel(filePath = sourceExcel) {
