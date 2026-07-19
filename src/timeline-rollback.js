@@ -23,7 +23,7 @@ const knownMutationActions = new Set([
 ]);
 
 export async function buildTimelineRollbackPreview(auditId, scope = "before") {
-  const target = getAuditLog(auditId);
+  const target = await getAuditLog(auditId);
   if (!target || !knownMutationActions.has(target.action)) {
     const error = new Error("只能从正式数据修改记录发起整体还原");
     error.statusCode = 404;
@@ -31,13 +31,14 @@ export async function buildTimelineRollbackPreview(auditId, scope = "before") {
   }
 
   const normalizedScope = scope === "single" ? "single" : "before";
-  const events = normalizedScope === "single"
+  const eventRows = normalizedScope === "single"
     ? [target]
     : await adapter.prepare(`
       SELECT * FROM audit_logs
       WHERE id >= ?
       ORDER BY id DESC
-    `).all(target.id).filter((event) => knownMutationActions.has(event.action));
+    `).all(target.id);
+  const events = Array.isArray(eventRows) ? eventRows.filter((event) => knownMutationActions.has(event.action)) : eventRows;
   const unsupported = events
     .filter((event) => !supportedMutationActions.has(event.action))
     .map((event) => ({ id: event.id, action: event.action, createdAt: event.created_at }));
@@ -101,7 +102,7 @@ export async function applyTimelineRollback(auditId, actorId, scope = "before") 
     }
 
     const updateClassroom = await adapter.prepare(`UPDATE classrooms SET updated_at = ${adapter.nowSql} WHERE id = ?`);
-    for (const classroomId of touchedClassrooms) updateClassroom.run(classroomId);
+    for (const classroomId of touchedClassrooms) await updateClassroom.run(classroomId);
     await logAudit(actorId, preview.scope === "single" ? "rollback_timeline_single" : "rollback_timeline_to_before", "audit_log", preview.targetAuditId, {
       targetAuditId: preview.targetAuditId,
       eventsIncluded: preview.eventsIncluded,
@@ -124,10 +125,11 @@ async function eventToInverseOperations(event) {
   if (event.action === "review_approved") {
     const request = await adapter.prepare("SELECT classroom_id FROM change_requests WHERE id = ?").get(event.target_id);
     if (!request) return [];
-    return await adapter.prepare(`
+    const items = await adapter.prepare(`
       SELECT field_key AS fieldKey, old_value AS value
       FROM change_request_items WHERE request_id = ?
-    `).all(event.target_id).map((item) => ({
+    `).all(event.target_id);
+    return items.map((item) => ({
       type: "set_value",
       auditId: event.id,
       classroomId: request.classroom_id,
