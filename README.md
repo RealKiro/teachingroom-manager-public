@@ -229,13 +229,46 @@ teachingroom-manager/
 
 ---
 
-## ⚙️ 环境变量
+## 🗄️ 数据库配置
+
+默认使用 **SQLite**（零依赖，开箱即用）。也支持 MySQL/MariaDB 和 PostgreSQL。
+
+### 连接方式
+
+```bash
+# SQLite（默认）
+npm start
+
+# MySQL / MariaDB（需 npm install mysql2）
+DATABASE_URL="mysql://user:pass@host:3306/dbname" npm start
+
+# PostgreSQL（需 npm install pg）
+DATABASE_URL="postgres://user:pass@host:5432/dbname" npm start
+```
+
+### 数据库相关环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DATABASE_URL` | 空 | 统一连接串。设置后忽略其他 DB_* 变量 |
+| `DB_TYPE` | `sqlite` | 数据库类型：`sqlite` / `mysql` / `postgres` |
+| `DB_HOST` | `localhost` | 数据库主机地址 |
+| `DB_PORT` | — | 数据库端口（MySQL: 3306, PG: 5432） |
+| `DB_USER` | `root` / `postgres` | 数据库用户 |
+| `DB_PASSWORD` | 空 | 数据库密码 |
+| `DB_NAME` | `teachingroom` | 数据库名 |
+| `DB_PATH` | `./data/teachingroom.sqlite` | SQLite 文件路径（仅 SQLite 模式） |
+
+> 优先级：`DATABASE_URL` > `DB_TYPE` + `DB_*` 变量 > SQLite 默认。
+
+---
+
+## ⚙️ 通用环境变量
 
 | 变量 | 必填 | 默认值 | 说明 |
 |---|---|---|---|
 | `PORT` | 否 | `3000` | HTTP 监听端口 |
 | `SESSION_SECRET` | **是** | 自动生成到文件 | Session 加密密钥 |
-| `DB_PATH` | 否 | `./data/teachingroom.sqlite` | SQLite 数据库路径 |
 | `INITIAL_ADMIN_PASSWORD` | 否 | 自动生成到文件 | 首次管理员密码（≥12 位） |
 | `AUTO_BACKUP_KEEP` | 否 | `200` | 自动备份保留份数（≥7） |
 | `BACKUP_MIRROR_DIR` | 否 | 空 | 备份镜像目录 |
