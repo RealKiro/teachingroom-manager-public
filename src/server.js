@@ -495,7 +495,7 @@ app.get("/api/open/fields", allowOpenCors, requireBaseDataToken, async (req, res
 });
 
 app.get("/api/open/summary", allowOpenCors, requireBaseDataToken, async (req, res) => {
-  const publishedKeys = new Set(await getPublicFields().map((field) => field.key));
+  const publishedKeys = new Set((await getPublicFields()).map((field) => field.key));
   const { records, summary, filters } = await getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
     summary,
@@ -506,7 +506,7 @@ app.get("/api/open/summary", allowOpenCors, requireBaseDataToken, async (req, re
 });
 
 app.get("/api/open/classrooms", allowOpenCors, requireBaseDataToken, async (req, res) => {
-  const publishedKeys = new Set(await getPublicFields().map((field) => field.key));
+  const publishedKeys = new Set((await getPublicFields()).map((field) => field.key));
   const { records, summary, filters } = await getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
     data: records.map((record) => toPublicClassroom(record, publishedKeys)),
@@ -522,7 +522,7 @@ app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, async (
   const { records } = await getClassroomRecords({});
   const record = records.find((item) => item.id === id || item.values.room === req.params.id);
   if (!record) return res.status(404).json({ error: "教室不存在" });
-  const publishedKeys = new Set(await getPublicFields().map((field) => field.key));
+  const publishedKeys = new Set((await getPublicFields()).map((field) => field.key));
   res.json({ data: toPublicClassroom(record, publishedKeys), updatedAt: latestClassroomUpdatedAt() });
 });
 
@@ -548,7 +548,7 @@ app.post("/api/change-requests", requireLogin, async (req, res) => {
     if (existingRequest) return res.status(200).json(existingRequest);
   }
 
-  const fields = new Map(await getFields().map((field) => [field.key, field]));
+  const fields = new Map((await getFields()).map((field) => [field.key, field]));
   const currentValues = await getClassroomValues(id);
   const items = [];
   for (const [fieldKey, newValueRaw] of Object.entries(changes)) {
@@ -701,7 +701,7 @@ app.post("/api/change-requests/:id/review", requireAdmin, async (req, res) => {
     const currentValues = await getClassroomValues(request.classroom_id);
     const conflicts = reviewItems.filter((item) => (currentValues[item.fieldKey] || "") !== (item.oldValue || ""));
     if (conflicts.length) {
-      const labels = new Map(await getFields().map((field) => [field.key, field.label]));
+      const labels = new Map((await getFields()).map((field) => [field.key, field.label]));
       return res.status(409).json({
         error: `正式数据已经变化，请拒绝旧申请后重新提交：${conflicts.map((item) => labels.get(item.fieldKey) || item.fieldKey).join("、")}`,
         conflicts: conflicts.map((item) => ({
@@ -1028,7 +1028,7 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
     ORDER BY al.created_at DESC, al.id DESC
   `).all(action, action, actorId, actorId);
 
-  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
+  const fields = new Map((await getFields()).map((field) => [field.key, field.label]));
   const itemStmt = await adapter.prepare(`
     SELECT cri.field_key AS fieldKey, cri.old_value AS oldValue, cri.new_value AS newValue
     FROM change_request_items cri
@@ -1637,7 +1637,7 @@ async function getApprovedRequestsFrom(target) {
 }
 
 async function buildSingleRollbackChanges(request) {
-  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
+  const fields = new Map((await getFields()).map((field) => [field.key, field.label]));
   const currentValues = await getClassroomValues(request.classroom_id);
   return getRequestItems(request.id).map((item) => ({
     classroomId: request.classroom_id,
@@ -1654,7 +1654,7 @@ async function buildSingleRollbackChanges(request) {
 }
 
 async function buildBeforeRollbackChanges(requests) {
-  const fields = new Map(await getFields().map((field) => [field.key, field.label]));
+  const fields = new Map((await getFields()).map((field) => [field.key, field.label]));
   const changesByField = new Map();
   for (const request of requests) {
     const roomLabel = `${request.building} ${request.frontDoor || request.room || ""}${request.backDoor ? ` / ${request.backDoor}` : ""}`;
@@ -2358,7 +2358,7 @@ function toPublicField(field) {
 }
 
 async function getPublicFields() {
-  return await getFields().filter((field) => field.publicApi);
+  return (await getFields()).filter((field) => field.publicApi);
 }
 
 function toPublicClassroom(record, publishedKeys = new Set(getPublicFields().map((field) => field.key))) {
