@@ -1751,12 +1751,12 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
     if (values.front_door) classroomByKey.set(values.front_door, classroom);
     if (values.back_door) classroomByKey.set(values.back_door, classroom);
   }
-  const pendingFieldKeys = new Set(await adapter.prepare(`
+  const pendingFieldKeys = new Set((await adapter.prepare(`
     SELECT cr.classroom_id AS classroomId, cri.field_key AS fieldKey
     FROM change_requests cr
     JOIN change_request_items cri ON cri.request_id = cr.id
     WHERE cr.status = 'pending'
-  `).all().map((row) => `${row.classroomId}|${row.fieldKey}`));
+  `).all()).map((row) => `${row.classroomId}|${row.fieldKey}`));
 
   const unmatchedRows = [];
   const requestGroups = [];
@@ -1934,11 +1934,12 @@ async function getClassroomRecords(filters = {}, options = {}) {
 }
 
 async function getPendingCreateSummaryRecords() {
-  return await adapter.prepare(`
+  const pending = await adapter.prepare(`
     SELECT id, values_json AS valuesJson, created_at AS createdAt
     FROM classroom_create_requests
     WHERE status = 'pending'
-  `).all().map((row) => {
+  `).all();
+  return pending.map((row) => {
     const payload = parseClassroomCreatePayload(row.valuesJson);
     const values = {
       ...payload.values,
