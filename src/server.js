@@ -172,7 +172,8 @@ app.post("/api/classrooms", requireAdmin, async (req, res) => {
   if (clientRequestId) {
     const created = await adapter.prepare("SELECT id FROM classrooms WHERE client_request_id = ?").get(clientRequestId);
     if (created) {
-      const record = await getClassroomRecords({ ids: String(created.id) }).records[0];
+      const createdResult = await getClassroomRecords({ ids: String(created.id) });
+      const record = createdResult.records[0];
       return res.status(200).json({ record, status: "created" });
     }
     const pending = await adapter.prepare(`
@@ -222,8 +223,9 @@ app.post("/api/classrooms", requireAdmin, async (req, res) => {
     return classroom.id;
   });
 
-  const id = createTx();
-  const record = await getClassroomRecords({ ids: String(id) }).records[0];
+  const id = createTx;
+  const classroomResult = await getClassroomRecords({ ids: String(id) });
+  const record = classroomResult.records[0];
   res.status(201).json({ record });
 });
 
@@ -456,7 +458,7 @@ app.post("/api/classroom-photo-requests/:id/review", requireAdmin, async (req, r
     });
   });
 
-  reviewTx();
+  // transaction already ran inside adapter.transaction()
   res.json({ ok: true });
 });
 
@@ -672,7 +674,7 @@ app.post("/api/classroom-create-requests/:id/review", requireAdmin, async (req, 
     });
   });
 
-  reviewTx();
+  // transaction already ran inside adapter.transaction()
   res.json({ ok: true });
 });
 
@@ -726,7 +728,7 @@ app.post("/api/change-requests/:id/review", requireAdmin, async (req, res) => {
     await logAudit(req.session.user.id, `review_${decision}`, "change_request", requestId, { note });
   });
 
-  reviewTx();
+  // transaction already ran inside adapter.transaction()
   res.json({ ok: true });
 });
 
@@ -1090,7 +1092,7 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
 app.get("/api/export", requireLogin, async (req, res, next) => {
   try {
     const { records, summary } = await getClassroomRecords(req.query);
-    const allSummary = await getClassroomRecords({}).summary;
+    const { records: allRecords, summary: allSummary } = await getClassroomRecords({});
     const fields = await getFields();
     const workbook = await buildExportWorkbook(records, fields, {
       query: req.query,
@@ -1854,7 +1856,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
     return { requestIds, createRequestIds };
   });
 
-  const { requestIds, createRequestIds } = importTx();
+  const { requestIds, createRequestIds } = importTx;
   const changedFields = requestGroups.reduce((sum, group) => sum + group.items.length, 0);
   const totalRequests = requestIds.length + createRequestIds.length;
   return {
