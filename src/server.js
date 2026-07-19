@@ -132,7 +132,7 @@ app.get("/api/fields", requireLogin, async (req, res) => {
 });
 
 app.get("/api/suggestions", requireLogin, async (req, res) => {
-  res.json({ suggestions: getSuggestions() });
+  res.json({ suggestions: await getSuggestions() });
 });
 
 app.post("/api/fields", requireSuperAdmin, async (req, res) => {
@@ -158,7 +158,7 @@ app.post("/api/fields", requireSuperAdmin, async (req, res) => {
 });
 
 app.get("/api/classrooms", requireLogin, async (req, res) => {
-  const result = getClassroomRecords(req.query);
+  const result = await getClassroomRecords(req.query);
   res.json(result);
 });
 
@@ -172,7 +172,7 @@ app.post("/api/classrooms", requireAdmin, async (req, res) => {
   if (clientRequestId) {
     const created = await adapter.prepare("SELECT id FROM classrooms WHERE client_request_id = ?").get(clientRequestId);
     if (created) {
-      const record = getClassroomRecords({ ids: String(created.id) }).records[0];
+      const record = await getClassroomRecords({ ids: String(created.id) }).records[0];
       return res.status(200).json({ record, status: "created" });
     }
     const pending = await adapter.prepare(`
@@ -192,7 +192,7 @@ app.post("/api/classrooms", requireAdmin, async (req, res) => {
   const existing = await adapter.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(building, room);
   if (existing) return res.status(409).json({ error: "该楼栋和教室编号已存在" });
 
-  const pendingDuplicate = findPendingClassroomCreateRequest(building, room);
+  const pendingDuplicate = await findPendingClassroomCreateRequest(building, room);
   if (pendingDuplicate) return res.status(409).json({ error: "该教室已有待审核新增申请" });
 
   if (req.session.user.username !== superAdminUsername) {
@@ -223,7 +223,7 @@ app.post("/api/classrooms", requireAdmin, async (req, res) => {
   });
 
   const id = createTx();
-  const record = getClassroomRecords({ ids: String(id) }).records[0];
+  const record = await getClassroomRecords({ ids: String(id) }).records[0];
   res.status(201).json({ record });
 });
 
@@ -476,7 +476,7 @@ app.get("/api/open/meta", allowOpenCors, requireBaseDataToken, async (req, res) 
   res.json({
     name: "TeachingRoom Base Data API",
     version: "0.1.0",
-    updatedAt: latestClassroomUpdatedAt(),
+    updatedAt: await latestClassroomUpdatedAt(),
     endpoints: [
       "/api/open/fields",
       "/api/open/classrooms",
@@ -493,34 +493,34 @@ app.get("/api/open/fields", allowOpenCors, requireBaseDataToken, async (req, res
 });
 
 app.get("/api/open/summary", allowOpenCors, requireBaseDataToken, async (req, res) => {
-  const publishedKeys = new Set(getPublicFields().map((field) => field.key));
-  const { records, summary, filters } = getClassroomRecords(req.query, { searchableKeys: publishedKeys });
+  const publishedKeys = new Set(await getPublicFields().map((field) => field.key));
+  const { records, summary, filters } = await getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
     summary,
     filters,
     count: records.length,
-    updatedAt: latestClassroomUpdatedAt()
+    updatedAt: await latestClassroomUpdatedAt()
   });
 });
 
 app.get("/api/open/classrooms", allowOpenCors, requireBaseDataToken, async (req, res) => {
-  const publishedKeys = new Set(getPublicFields().map((field) => field.key));
-  const { records, summary, filters } = getClassroomRecords(req.query, { searchableKeys: publishedKeys });
+  const publishedKeys = new Set(await getPublicFields().map((field) => field.key));
+  const { records, summary, filters } = await getClassroomRecords(req.query, { searchableKeys: publishedKeys });
   res.json({
     data: records.map((record) => toPublicClassroom(record, publishedKeys)),
     summary,
     filters,
     count: records.length,
-    updatedAt: latestClassroomUpdatedAt()
+    updatedAt: await latestClassroomUpdatedAt()
   });
 });
 
 app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, async (req, res) => {
   const id = Number(req.params.id);
-  const { records } = getClassroomRecords({});
+  const { records } = await getClassroomRecords({});
   const record = records.find((item) => item.id === id || item.values.room === req.params.id);
   if (!record) return res.status(404).json({ error: "教室不存在" });
-  const publishedKeys = new Set(getPublicFields().map((field) => field.key));
+  const publishedKeys = new Set(await getPublicFields().map((field) => field.key));
   res.json({ data: toPublicClassroom(record, publishedKeys), updatedAt: latestClassroomUpdatedAt() });
 });
 
@@ -547,7 +547,7 @@ app.post("/api/change-requests", requireLogin, async (req, res) => {
   }
 
   const fields = new Map(await getFields().map((field) => [field.key, field]));
-  const currentValues = getClassroomValues(id);
+  const currentValues = await getClassroomValues(id);
   const items = [];
   for (const [fieldKey, newValueRaw] of Object.entries(changes)) {
     const field = fields.get(fieldKey);
@@ -558,7 +558,7 @@ app.post("/api/change-requests", requireLogin, async (req, res) => {
   }
 
   if (!items.length) return res.status(400).json({ error: "没有检测到实际变化" });
-  const pendingConflicts = findPendingFieldConflicts(id, items.map((item) => item.fieldKey));
+  const pendingConflicts = await findPendingFieldConflicts(id, items.map((item) => item.fieldKey));
   if (pendingConflicts.length) {
     return res.status(409).json({
       error: `以下字段已有待审核变更：${pendingConflicts.map((item) => item.label).join("、")}`,
@@ -615,8 +615,8 @@ app.get("/api/change-requests", requireLogin, async (req, res) => {
     requestType: "update",
     items: itemStmt.all(request.id)
   }));
-  const createRequests = getClassroomCreateReviewRequests(status);
-  const photoRequests = getClassroomPhotoReviewRequests(status);
+  const createRequests = await getClassroomCreateReviewRequests(status);
+  const photoRequests = await getClassroomPhotoReviewRequests(status);
   const combined = [...updateRequests, ...createRequests, ...photoRequests]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at) || b.id - a.id);
 
@@ -696,7 +696,7 @@ app.post("/api/change-requests/:id/review", requireAdmin, async (req, res) => {
     WHERE request_id = ?
   `).all(requestId);
   if (decision === "approved") {
-    const currentValues = getClassroomValues(request.classroom_id);
+    const currentValues = await getClassroomValues(request.classroom_id);
     const conflicts = reviewItems.filter((item) => (currentValues[item.fieldKey] || "") !== (item.oldValue || ""));
     if (conflicts.length) {
       const labels = new Map(await getFields().map((field) => [field.key, field.label]));
@@ -1089,8 +1089,8 @@ app.get("/api/audit-logs", requireSuperAdmin, async (req, res) => {
 
 app.get("/api/export", requireLogin, async (req, res, next) => {
   try {
-    const { records, summary } = getClassroomRecords(req.query);
-    const allSummary = getClassroomRecords({}).summary;
+    const { records, summary } = await getClassroomRecords(req.query);
+    const allSummary = await getClassroomRecords({}).summary;
     const fields = await getFields();
     const workbook = await buildExportWorkbook(records, fields, {
       query: req.query,
@@ -1439,17 +1439,17 @@ function normalizeRollbackScope(value) {
   return value === "before" ? "before" : "single";
 }
 
-function buildRollbackPreview(requestId, scope) {
-  const target = getApprovedRequest(requestId);
+async function buildRollbackPreview(requestId, scope) {
+  const target = await getApprovedRequest(requestId);
   if (!target) {
     const error = new Error("只能回滚已审核通过的修改记录");
     error.statusCode = 404;
     throw error;
   }
 
-  const requests = scope === "before" ? getApprovedRequestsFrom(target) : [target];
-  const changes = scope === "before" ? buildBeforeRollbackChanges(requests) : buildSingleRollbackChanges(target);
-  const pendingConflicts = findPendingRollbackConflicts(changes);
+  const requests = scope === "before" ? await getApprovedRequestsFrom(target) : [target];
+  const changes = scope === "before" ? await buildBeforeRollbackChanges(requests) : await buildSingleRollbackChanges(target);
+  const pendingConflicts = await findPendingRollbackConflicts(changes);
   const changed = changes.filter((change) => change.currentValue !== change.restoreValue);
   const conflicts = changes.filter((change) => change.conflict);
   const canExecute = changed.length > 0 && pendingConflicts.length === 0 && conflicts.length === 0;
@@ -1481,8 +1481,8 @@ function buildRollbackPreview(requestId, scope) {
   };
 }
 
-function buildCreateRollbackPreview(requestId, scope) {
-  const target = getApprovedCreateRequest(requestId);
+async function buildCreateRollbackPreview(requestId, scope) {
+  const target = await getApprovedCreateRequest(requestId);
   if (!target) {
     const error = new Error("只能回滚已审核通过的新增教室记录");
     error.statusCode = 404;
@@ -1491,7 +1491,7 @@ function buildCreateRollbackPreview(requestId, scope) {
 
   const requests = scope === "before" ? getApprovedCreateRequestsFrom(target) : [target];
   const changes = buildCreateRollbackChanges(requests);
-  const conflicts = findCreateRollbackConflicts(changes);
+  const conflicts = await findCreateRollbackConflicts(changes);
   const canExecute = changes.length > 0 && conflicts.length === 0;
   const reason = !changes.length
     ? "当前数据已经处于该回滚目标状态"
@@ -1555,7 +1555,7 @@ async function getApprovedCreateRequestsFrom(target) {
   `).all(targetTime, targetTime, target.id).map(hydrateApprovedCreateRequest);
 }
 
-function hydrateApprovedCreateRequest(row) {
+async function hydrateApprovedCreateRequest(row) {
   const payload = parseClassroomCreatePayload(row.values_json);
   const classroom = findClassroomForCreateRequest(row, payload);
   return {
@@ -1578,7 +1578,7 @@ async function findClassroomForCreateRequest(request, payload) {
   return await adapter.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(payload.building, payload.room);
 }
 
-function buildCreateRollbackChanges(requests) {
+async function buildCreateRollbackChanges(requests) {
   return requests
     .filter((request) => request.classroomId)
     .map((request) => ({
@@ -1636,7 +1636,7 @@ async function getApprovedRequestsFrom(target) {
 
 async function buildSingleRollbackChanges(request) {
   const fields = new Map(await getFields().map((field) => [field.key, field.label]));
-  const currentValues = getClassroomValues(request.classroom_id);
+  const currentValues = await getClassroomValues(request.classroom_id);
   return getRequestItems(request.id).map((item) => ({
     classroomId: request.classroom_id,
     requestId: request.id,
@@ -1663,7 +1663,7 @@ async function buildBeforeRollbackChanges(requests) {
         existing.restoreValue = item.oldValue || "";
         existing.sourceRequestIds.push(request.id);
       } else {
-        const currentValues = getClassroomValues(request.classroom_id);
+        const currentValues = await getClassroomValues(request.classroom_id);
         changesByField.set(key, {
           classroomId: request.classroom_id,
           requestId: request.id,
@@ -1744,7 +1744,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
 
   const currentValuesByClassroom = new Map();
   for (const classroom of classrooms) {
-    const values = normalizeComparableValues(getClassroomValues(classroom.id));
+    const values = normalizeComparableValues(await getClassroomValues(classroom.id));
     currentValuesByClassroom.set(classroom.id, { ...values, building: classroom.building, room: classroom.room });
     if (values.front_door) classroomByKey.set(values.front_door, classroom);
     if (values.back_door) classroomByKey.set(values.back_door, classroom);
@@ -1778,7 +1778,7 @@ async function createChangeRequestsFromWorkbook(filePath, originalName, submitte
         unmatchedRows.push({ building: row.building, room: row.room, frontDoor: row.values.front_door || "", backDoor: row.values.back_door || "" });
         continue;
       }
-      if (findPendingClassroomCreateRequest(createPayload.building, createPayload.room)) {
+      if (await findPendingClassroomCreateRequest(createPayload.building, createPayload.room)) {
         skippedPendingCreates += 1;
         continue;
       }
@@ -1901,7 +1901,7 @@ async function getClassroomRecords(filters = {}, options = {}) {
   }
   const pendingByClassroom = new Map(pendingRows.map((row) => [row.classroom_id, row.count]));
   const photosByClassroom = new Map(photoRows.map((row) => [row.classroom_id, row.count]));
-  const pendingCreateRecords = getPendingCreateSummaryRecords();
+  const pendingCreateRecords = await getPendingCreateSummaryRecords();
 
   let records = classrooms.map((classroom) => {
     const values = {
