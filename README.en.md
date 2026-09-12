@@ -30,43 +30,23 @@ The app is designed for small internal teams, so the runtime stays simple: Node.
 - SQLite-backed login sessions; persistent browser outbox with idempotent retry for weak-network submissions.
 - Read-only base-data API and a built-in standard MCP server for other departments and bots (such as AstrBot).
 
-## Quick Start
-
-Run locally with Node.js (for long-running production use, add systemd — see the deployment notes below):
-
-```bash
-git clone https://github.com/RealKiro/teachingroom-manager-public.git
-cd teachingroom-manager-public
-npm install
-npm test          # optional: run the full test suite
-npm start
-```
-
-Open `http://localhost:3000/`. First administrator account:
-
-```text
-Username: admin
-Password: INITIAL_ADMIN_PASSWORD when set; otherwise data/initial-admin-password.txt
-```
-
-The app has no fixed password and does not create an inspector automatically. Change the administrator password immediately after first login; the generated temporary-password file is then deleted. Create inspectors and normal administrators from User Management.
-
-## Which deployment option should you choose?
+## Deployment
 
 All application data (SQLite database, photos, backups) requires **persistent storage**, which defines the limits of each platform:
 
 | Platform | Free tier | Free lunch? | Notes |
 | --- | --- | --- | --- |
-| Own hardware (Synology NAS etc.) | Already owned | ✅ **Recommended** | Local data, zero cost |
-| Oracle Cloud Always Free | Permanently free ARM VM (4 OCPU / 24 GB) | ✅ | Best free option for public access |
-| Google Cloud Always Free | Permanently free e2-micro VM | ✅ | Card verification required; 1 GB RAM is enough here |
+| Docker Compose (own server / Synology NAS) | Already owned | ✅ **Recommended** | Prebuilt GHCR image, data stays local |
 | Cloudflare Workers | 100k requests/day + DO SQLite storage | ⚠️ Experimental | Adapted; data lives in Durable Objects built-in SQLite |
 | Vercel | Function execution + daily Cron | ⚠️ Experimental | Adapted; requires external Turso free remote SQLite |
+| Oracle Cloud Always Free | Permanently free ARM VM (4 OCPU / 24 GB) | ✅ | Best free VM for public access |
+| Google Cloud Always Free | Permanently free e2-micro VM | ✅ | Card verification required; 1 GB RAM is enough here |
 | Render / Koyeb / HF Spaces | Yes | ⚠️ Demo only | Ephemeral disk loses data on restart |
 | Railway / Fly.io | One-time $5 trial credit | ❌ | Charges apply once credit is used up |
 | Cloudflare Containers | ❌ | ❌ | Requires the Workers Paid plan ($5/month minimum) |
+| Plain Node.js (local development) | Existing computer | ✅ | Local development and lightweight deployments |
 
-Bottom line: the two serverless paths below (Cloudflare Workers and Vercel) are genuinely free for small teams; for stronger durability or higher traffic, a NAS or free VM is still recommended. Platform policies change; always verify against official docs before deploying.
+Recommended order: use Docker Compose when you have a server or NAS; pick the Workers or Vercel serverless paths for a free public deployment (the free tiers are enough for small teams); prefer own hardware when durability matters most. Platform policies change; always verify against official docs before deploying.
 
 ### Docker Compose (recommended)
 
@@ -76,18 +56,27 @@ GitHub Actions automatically tests, builds `linux/amd64` + `linux/arm64` images 
 ghcr.io/realkiro/teachingroom-manager-public:latest
 ```
 
-Before the first pull, make the GHCR package public (repository Packages → teachingroom-manager-public → Package settings → Change visibility → Public), or run `docker login ghcr.io` first.
+**Step 1: prepare the image.** Before the first pull, make the GHCR package public (repository Packages → teachingroom-manager-public → Package settings → Change visibility → Public), or run `docker login ghcr.io` first; a fully local build also works and skips this step.
+
+**Step 2: prepare the directory and secret.**
 
 ```bash
 git clone https://github.com/RealKiro/teachingroom-manager-public.git
 cd teachingroom-manager-public/docker
 echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
-docker compose pull
-docker compose up -d
-curl http://127.0.0.1:3000/api/health
 ```
 
-If `SESSION_SECRET` is not set, the system generates and persists one into `data/session-secret.txt`; a fully local build also works (`docker compose up -d --build`). The image is a multi-stage build on `node:24-alpine`, runs as non-root, and ships with a healthcheck.
+If `SESSION_SECRET` is not set, the system generates and persists one into `data/session-secret.txt`.
+
+**Step 3: start and verify.**
+
+```bash
+docker compose pull            # prebuilt image; for a local build use docker compose up -d --build
+docker compose up -d
+curl http://127.0.0.1:3000/api/health   # {"ok":true,...} means success
+```
+
+The image is a multi-stage build on `node:24-alpine`, runs as non-root, and ships with a healthcheck.
 
 ### Synology NAS (Container Manager)
 
@@ -113,14 +102,23 @@ sudo docker compose logs -f
 
 The app is adapted for Workers: the whole Express app runs inside a single Durable Object with data stored in the DO's built-in SQLite (business code identical to local/Docker runs).
 
+**Step 1: install the tooling and log in.**
+
 ```bash
 npm install
 npx wrangler login
-# Configure environment variables before the first deploy (see the serverless env table below)
-npx wrangler deploy
 ```
 
-You can also connect the GitHub repository in the Cloudflare dashboard for automatic deploys. After the first deployment, set the environment variables in Worker settings (`SESSION_SECRET` is required).
+**Step 2: prepare environment variables.** Configure them in the Cloudflare dashboard (Workers → Settings → Variables) or in the `vars` block of `wrangler.jsonc`; required variables are listed in the serverless env table below (`SESSION_SECRET` is required; `INITIAL_ADMIN_PASSWORD` and `CRON_SECRET` are recommended).
+
+**Step 3: deploy and verify.**
+
+```bash
+npx wrangler deploy
+curl https://<your-subdomain>.workers.dev/api/health
+```
+
+You can also connect the GitHub repository in the Cloudflare dashboard for automatic deploys. After the first deployment, if `INITIAL_ADMIN_PASSWORD` was not set, the admin password is printed to the deployment logs.
 
 Notes:
 
@@ -131,17 +129,21 @@ Notes:
 
 ### Vercel (free-tier friendly, experimental)
 
-On Vercel the database is Turso (free remote libSQL; SQLite dialect unchanged):
+On Vercel the database is Turso (free remote libSQL; SQLite dialect unchanged).
+
+**Step 1: create the Turso database.**
 
 ```bash
-# 1. Create a Turso database and collect connection info
 npm install -g @turso/cli
 turso auth login
 turso db create teachingroom
 turso db show teachingroom --url          # → LIBSQL_URL
 turso db tokens create teachingroom       # → LIBSQL_AUTH_TOKEN
+```
 
-# 2. Deploy to Vercel
+**Step 2: deploy to Vercel and configure environment variables.**
+
+```bash
 npm install -g vercel
 vercel link
 vercel env add LIBSQL_URL production
@@ -195,6 +197,32 @@ Notes:
 - **Container disk is not persistent**: SQLite data and uploaded photos are lost on restart or migration. Use it for demos and trials only.
 - The image must be publicly pullable (public GHCR package or public Docker Hub repository).
 - Configuration fields follow the [Cloudflare Containers documentation](https://developers.cloudflare.com/containers/).
+
+### Plain Node.js (local development and lightweight deployments)
+
+```bash
+git clone https://github.com/RealKiro/teachingroom-manager-public.git
+cd teachingroom-manager-public
+npm install
+npm test          # optional: run the full test suite
+npm start
+curl http://localhost:3000/api/health
+```
+
+For long-running local deployments, add systemd (unit template `deploy/teachingroom.service`; full steps in [DEPLOYMENT.en.md](./DEPLOYMENT.en.md)).
+
+### First startup
+
+First administrator account:
+
+```text
+Username: admin
+Password: INITIAL_ADMIN_PASSWORD when set; otherwise written to data/initial-admin-password.txt locally, or printed to the deployment logs on serverless platforms
+```
+
+Change the administrator password immediately after first login; the generated temporary-password file is then deleted. Create inspectors and normal administrators from User Management. The app has no fixed password and does not create an inspector automatically.
+
+If the database is empty, the app imports classroom records from `初始化数据表格（虚拟）.xlsx` (synthetic demo data only — replace or remove before production use); serverless mode skips this import by default, and empty databases can be initialized by uploading an Excel file in the UI.
 
 ## MCP Integration (AstrBot and other bot frameworks)
 
@@ -276,8 +304,6 @@ BASE_DATA_CORS_ORIGIN=<empty by default; comma-separated allowlist>
 AUTO_BACKUP_KEEP=200
 BACKUP_MIRROR_DIR=<optional second backup directory>
 ```
-
-The first run creates `data/teachingroom.sqlite`. If the database is empty, the app imports classroom records from `初始化数据表格（虚拟）.xlsx` (synthetic demo data only — replace or remove before production use).
 
 ## Data And Backups
 

@@ -30,43 +30,23 @@
 - 登录 session 保存到 SQLite；弱网提交进入浏览器持久队列并幂等补交。
 - 提供只读基础数据 API 和内置标准 MCP 服务端，便于其他部门或机器人（如 AstrBot）接入。
 
-## 快速开始
-
-本地直接用 Node.js 运行（生产环境长期运行建议配合 systemd，见下文部署说明）：
-
-```bash
-git clone https://github.com/RealKiro/teachingroom-manager-public.git
-cd teachingroom-manager-public
-npm install
-npm test          # 可选：运行完整测试
-npm start
-```
-
-打开 `http://localhost:3000/`。首次管理员账号：
-
-```text
-用户名：admin
-密码：优先使用 INITIAL_ADMIN_PASSWORD；未设置时写入 data/initial-admin-password.txt
-```
-
-系统不创建固定密码，也不自动创建巡查员。首次登录后请立即修改管理员密码（临时密码文件随之删除）；巡查员和普通管理员在用户管理页面创建。
-
-## 部署方式怎么选？
+## 部署
 
 本项目的全部数据（SQLite 数据库、照片、备份）都需要**持久化存储**，这决定了各平台的适用边界：
 
 | 平台 | 免费额度 | 能否白嫖 | 说明 |
 | --- | --- | --- | --- |
-| 群晖 NAS 等自有设备 | 已有硬件 | ✅ **首选** | 数据在本机，零成本 |
-| Oracle Cloud 永久免费 | 永久免费 ARM VM（4 核 24G） | ✅ | 公网访问的最佳免费方案 |
-| Google Cloud Always Free | 永久免费 e2-micro VM | ✅ | 需绑卡验证，1G 内存够本项目用 |
+| Docker Compose（服务器 / 群晖 NAS 等自有设备） | 已有硬件 | ✅ **首选** | 预构建 GHCR 镜像，数据在本机 |
 | Cloudflare Workers | 10 万请求/天 + DO SQLite 存储 | ⚠️ 实验性 | 已适配，数据存 Durable Objects 内置 SQLite |
 | Vercel | 函数执行 + 每日 Cron | ⚠️ 实验性 | 已适配，需外接 Turso 免费远程 SQLite |
+| Oracle Cloud 永久免费 | 永久免费 ARM VM（4 核 24G） | ✅ | 公网访问的最佳免费 VM |
+| Google Cloud Always Free | 永久免费 e2-micro VM | ✅ | 需绑卡验证，1G 内存够本项目用 |
 | Render / Koyeb / HF Spaces | 有 | ⚠️ 仅演示 | 磁盘不持久，重启丢数据 |
 | Railway / Fly.io | 一次性 $5 试用金 | ❌ | 额度用完即收费 |
 | Cloudflare Containers | ❌ | ❌ | 必须 Workers 付费计划（$5/月起） |
+| Node.js 直接运行（本地开发） | 已有电脑 | ✅ | 本地开发与轻量部署 |
 
-一句话结论：小团队想白嫖，Workers 和 Vercel 两条无服务器路线已可用且免费额度足够；对数据可靠性要求更高时，选群晖 NAS 或免费 VM。各平台政策会变化，部署前以官方文档为准。
+推荐顺序：有服务器或 NAS 就用 Docker Compose；想免费上公网选 Workers 或 Vercel 两条无服务器路线（免费额度对小团队足够）；对数据可靠性要求更高时仍优先自有设备。各平台政策会变化，部署前以官方文档为准。
 
 ### Docker Compose（推荐）
 
@@ -76,18 +56,27 @@ GitHub Actions 在每次推送 main 或打 `v*` 标签时自动测试、构建 `
 ghcr.io/realkiro/teachingroom-manager-public:latest
 ```
 
-首次拉取前请把 GHCR 包设为公开（仓库 Packages → teachingroom-manager-public → Package settings → Change visibility → Public），或先 `docker login ghcr.io`。
+**步骤 1：准备镜像。** 首次拉取前把 GHCR 包设为公开（仓库 Packages → teachingroom-manager-public → Package settings → Change visibility → Public），或先 `docker login ghcr.io`；也可以完全本地构建，跳过此步。
+
+**步骤 2：准备目录与密钥。**
 
 ```bash
 git clone https://github.com/RealKiro/teachingroom-manager-public.git
 cd teachingroom-manager-public/docker
 echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
-docker compose pull
-docker compose up -d
-curl http://127.0.0.1:3000/api/health
 ```
 
-`SESSION_SECRET` 未设置时系统会自动生成并持久化到 `data/session-secret.txt`；也可以完全本地构建（`docker compose up -d --build`）。镜像基于 `node:24-alpine` 多阶段构建，非 root 运行，内置健康检查。
+`SESSION_SECRET` 未设置时系统会自动生成并持久化到 `data/session-secret.txt`。
+
+**步骤 3：启动并验证。**
+
+```bash
+docker compose pull            # 使用预构建镜像；本地构建改用 docker compose up -d --build
+docker compose up -d
+curl http://127.0.0.1:3000/api/health   # 返回 {"ok":true,...} 即成功
+```
+
+镜像基于 `node:24-alpine` 多阶段构建，非 root 运行，内置健康检查。
 
 ### 群晖 NAS（Container Manager）
 
@@ -113,14 +102,23 @@ sudo docker compose logs -f
 
 应用已适配 Workers：整个 Express 应用跑在单个 Durable Object 里，数据存入 DO 内置 SQLite（业务代码与本地/Docker 完全一致）。
 
+**步骤 1：安装工具并登录。**
+
 ```bash
 npm install
 npx wrangler login
-# 首次部署前设置环境变量（见下方无服务器环境变量表）
-npx wrangler deploy
 ```
 
-也可以在 Cloudflare 控制台连接 GitHub 仓库自动部署。首次部署后请在 Workers 设置中配置环境变量（`SESSION_SECRET` 必填）。
+**步骤 2：准备环境变量。** 在 Cloudflare 控制台（Workers → 设置 → 变量）或 `wrangler.jsonc` 的 `vars` 中配置，必填项见下方无服务器环境变量表（`SESSION_SECRET` 必填；建议设置 `INITIAL_ADMIN_PASSWORD` 与 `CRON_SECRET`）。
+
+**步骤 3：部署并验证。**
+
+```bash
+npx wrangler deploy
+curl https://<你的子域>.workers.dev/api/health
+```
+
+也可以在 Cloudflare 控制台连接 GitHub 仓库自动部署。首次部署后如未设置 `INITIAL_ADMIN_PASSWORD`，管理员密码会打印在部署日志中。
 
 注意事项：
 
@@ -131,17 +129,21 @@ npx wrangler deploy
 
 ### Vercel（免费额度可跑，实验性）
 
-Vercel 上数据库使用 Turso（libSQL 免费远程 SQLite，SQLite 方言零改动）：
+Vercel 上数据库使用 Turso（libSQL 免费远程 SQLite，SQLite 方言零改动）。
+
+**步骤 1：创建 Turso 数据库。**
 
 ```bash
-# 1. 创建 Turso 数据库并获取连接信息
 npm install -g @turso/cli
 turso auth login
 turso db create teachingroom
 turso db show teachingroom --url          # → LIBSQL_URL
 turso db tokens create teachingroom       # → LIBSQL_AUTH_TOKEN
+```
 
-# 2. 部署到 Vercel
+**步骤 2：部署到 Vercel 并配置环境变量。**
+
+```bash
 npm install -g vercel
 vercel link
 vercel env add LIBSQL_URL production
@@ -195,6 +197,32 @@ wrangler deploy
 - **容器磁盘不持久**：重启或迁移后 SQLite 数据与上传的照片会丢失，仅适合演示与试用。
 - 镜像必须可公开拉取（GHCR 公开包或 Docker Hub 公开仓库）。
 - 配置字段以 [Cloudflare Containers 官方文档](https://developers.cloudflare.com/containers/) 为准。
+
+### Node.js 直接运行（本地开发与轻量部署）
+
+```bash
+git clone https://github.com/RealKiro/teachingroom-manager-public.git
+cd teachingroom-manager-public
+npm install
+npm test          # 可选：运行完整测试
+npm start
+curl http://localhost:3000/api/health
+```
+
+本地长期运行建议配合 systemd 常驻（服务模板 `deploy/teachingroom.service`，完整步骤见 [DEPLOYMENT.md](./DEPLOYMENT.md)）。
+
+### 首次启动
+
+首次管理员账号：
+
+```text
+用户名：admin
+密码：优先使用 INITIAL_ADMIN_PASSWORD；未设置时本地运行写入 data/initial-admin-password.txt，无服务器平台打印到部署日志
+```
+
+首次登录后请立即修改管理员密码（临时密码文件随之删除）；巡查员和普通管理员在用户管理页面创建。系统不创建固定密码，也不自动创建巡查员。
+
+数据库为空时会自动导入 `初始化数据表格（虚拟）.xlsx`（虚构示例数据，正式使用前请替换或删除）；无服务器模式默认跳过该导入，可在界面中上传 Excel 完成初始化。
 
 ## MCP 接入（AstrBot 等机器人框架）
 
@@ -276,8 +304,6 @@ BASE_DATA_CORS_ORIGIN=<默认为空；逗号分隔的跨域白名单>
 AUTO_BACKUP_KEEP=200
 BACKUP_MIRROR_DIR=<可选第二备份目录>
 ```
-
-首次运行会创建 `data/teachingroom.sqlite`。数据库为空时自动导入 `初始化数据表格（虚拟）.xlsx`（内容全部为虚构示例，正式使用前请替换或删除）。
 
 ## 数据和备份
 
