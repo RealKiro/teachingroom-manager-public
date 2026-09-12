@@ -58,7 +58,7 @@
 
 ### Docker Compose（推荐，服务器与群晖 NAS 通用）
 
-镜像已发布在 GHCR，**不需要 Fork 仓库、不需要构建**，两个文件就能跑起来：`docker-compose.yml` 和 `.env`。
+镜像由本仓库的 GitHub Actions 自动构建并发布在 GHCR（已设为公开，和 Docker Hub 上的公共镜像一样，任何人都能直接拉取，不需要 Fork 仓库、不需要 GitHub 账号、不需要构建）。你要准备的只有两个文件：`docker-compose.yml` 和 `.env`。
 
 **第 1 步：新建一个目录，放入两个文件**
 
@@ -96,7 +96,7 @@ curl http://127.0.0.1:3000/api/health   # 返回 {"ok":true,...} 即成功
 
 **数据与更新**：全部数据保存在 compose 目录旁的 `data/`、`backups/`、`uploads/`、`exports/` 四个文件夹里，定期备份它们即可。更新版本只需 `docker compose pull && docker compose up -d`。
 
-> 注：镜像从 `ghcr.io/realkiro/teachingroom-manager-public:latest` 拉取；若提示需要登录，请仓库所有者在 GitHub Packages 设置中把该包改为 Public（只需做一次）。想在 `.env` 里把 `TEACHINGROOM_IMAGE` 指向自己 Fork 构建的镜像也可以。
+> 注：镜像地址固定为 `ghcr.io/realkiro/teachingroom-manager-public:latest`，它由本仓库自动构建发布，已公开可拉取。`TEACHINGROOM_IMAGE` 仅在你修改了代码、想使用自己构建的镜像时才需要设置（例如 Fork 后在自己的仓库里触发 Docker 工作流，再指向 `ghcr.io/你的用户名/...`）。
 
 ### Cloudflare Workers（免费额度可跑，实验性）
 

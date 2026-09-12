@@ -58,7 +58,7 @@ Recommended order: use Docker Compose when you have a server or NAS; pick the Wo
 
 ### Docker Compose (recommended, works for both servers and Synology NAS)
 
-The image is published on GHCR — **no fork, no build required**. Two files are enough: `docker-compose.yml` and `.env`.
+The image is automatically built by this repository's GitHub Actions and published on GHCR (already public — like any image on Docker Hub, anyone can pull it directly, no fork, no GitHub account, no build required). All you need are two files: `docker-compose.yml` and `.env`.
 
 **Step 1: create a directory and put two files in it**
 
@@ -96,7 +96,7 @@ The first startup imports a synthetic demo dataset — delete it in the UI befor
 
 **Data and updates**: all data lives in the `data/`, `backups/`, `uploads/`, and `exports/` folders next to the compose file — back those up regularly. Updating is just `docker compose pull && docker compose up -d`.
 
-> Note: the image is pulled from `ghcr.io/realkiro/teachingroom-manager-public:latest`; if a login is required, the repository owner must set the package to Public in the GitHub Packages settings (one-time). Alternatively point `TEACHINGROOM_IMAGE` in `.env` at an image built from your own fork.
+> Note: the image address is fixed at `ghcr.io/realkiro/teachingroom-manager-public:latest`, built and published automatically by this repository. `TEACHINGROOM_IMAGE` is only needed if you modify the code and want to use your own build (e.g. fork the repo, run the Docker workflow, then point to `ghcr.io/your-username/...`).
 
 ### Cloudflare Workers (free-tier friendly, experimental)
 
