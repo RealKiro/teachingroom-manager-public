@@ -15,7 +15,26 @@
 
 ## 记录
 
-### 2026-07-27 13:07:21 CST
+### 2026-09-12 17:40:00 CST
+
+- 事件：公开脱敏版重写 README，补充免费部署对比说明。
+- 分支：`main`
+- 备注：README 与英文版重构为"功能 / 快速开始 / 部署方式怎么选 / MCP 接入 / API / CI/CD"结构，新增各平台免费额度与数据持久性对比表（Cloudflare Containers 需付费计划、Render 等免费实例磁盘不持久等结论），并补充 Oracle Cloud / Google Cloud 永久免费 VM 部署要点。不包含学校部署信息或运行数据。
+- 验证：Markdown 结构人工核对；本次仅文档改动，不影响测试结果。
+
+### 2026-09-12 17:16:48 CST
+
+- 事件：公开脱敏版新增标准 MCP 服务端并整理 Docker 文件。
+- 分支：`main`（提交 `d1636ad`）
+- 备注：新增 `/mcp` 端点（Streamable HTTP，只读工具集：台账查询、教室详情、字段定义、统计概览），鉴权复用基础数据 API 令牌，适配 AstrBot 远程 MCP 接入；`Dockerfile` 与 `docker-compose.yml` 迁入 `docker/` 目录，compose 默认拉取 GHCR 预构建镜像；新增 Cloudflare Containers 示例（`deploy/cloudflare/`）；README 与部署指南补充 Cloudflare、群晖 NAS、MCP 对接说明。不包含学校部署信息或运行数据。
+- 验证：新增 MCP 测试 8 项全部通过，11 项 Node 测试通过 10 项（1 项为 Windows 本机 POSIX 权限断言限制，CI Ubuntu 环境通过）；GitHub Actions CI 与 Docker 工作流均成功。
+
+### 2026-09-12 16:46:09 CST
+
+- 事件：公开脱敏版新增 Alpine Docker 构建与 CI/CD 自动化工作流。
+- 分支：`main`（提交 `9642020`）
+- 备注：Dockerfile 改为 `node:24-alpine` 多阶段构建（非 root、健康检查）；新增 GitHub Actions 测试矩阵（Node 20/22/24）与 Docker 构建、冒烟测试、GHCR/Docker Hub 发布工作流；新增 Dependabot 配置；双语部署文档补充预构建镜像与 CI/CD 说明。不包含学校部署信息或运行数据。
+- 验证：GitHub Actions CI 与 Docker 工作流均成功；集成测试全部通过。
 
 - 事件：公开脱敏版调整历史起始记录的显示名称。
 - 分支：`codex/rename-history-baseline`
