@@ -1,7 +1,6 @@
 services:
   teachingroom:
-    # 默认拉取仓库自带的 GHCR 镜像；Fork 用户在 .env 中配置
-    # TEACHINGROOM_IMAGE=ghcr.io/<你的用户名>/teachingroom-manager-public:latest 即可换成自己的镜像
+    # 默认拉取官方预构建镜像；在 .env 中配置 TEACHINGROOM_IMAGE 可换成自己的镜像
     image: ${TEACHINGROOM_IMAGE:-ghcr.io/realkiro/teachingroom-manager-public:latest}
     build:
       context: ..
@@ -17,9 +16,9 @@ services:
       - DB_PATH=/app/data/teachingroom.sqlite
       - AUTO_BACKUP_KEEP=200
     volumes:
-      - ../data:/app/data
-      - ../backups:/app/backups
-      - ../uploads:/app/uploads
-      - ../exports:/app/exports
-      - ../初始化数据表格（虚拟）.xlsx:/app/初始化数据表格（虚拟）.xlsx:ro
+      # 运行数据都在本目录（与 docker-compose.yml 同级）
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - ./uploads:/app/uploads
+      - ./exports:/app/exports
     restart: unless-stopped

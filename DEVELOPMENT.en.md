@@ -60,6 +60,7 @@ teachingroom/
 ├── docker/
 │   ├── Dockerfile                 # multi-stage build on node:24-alpine
 │   ├── docker-compose.yml         # image name overridable via TEACHINGROOM_IMAGE
+│   ├── .env.example                    # config template, copy to .env
 │   └── README.md
 ├── README.md / README.en.md
 ├── DEPLOYMENT.md / DEPLOYMENT.en.md

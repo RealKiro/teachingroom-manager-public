@@ -167,18 +167,17 @@ sudo systemctl restart teachingroom.service
 
 ## 8. Docker Compose Deployment
 
-Docker-related files live in the repository's `docker/` directory (`Dockerfile`, `docker-compose.yml`). Work from that directory:
+Docker-related files live in the repository's `docker/` directory (`Dockerfile`, `docker-compose.yml`, `.env.example`). The simplest flow needs only `docker-compose.yml` and `.env` (copy `.env.example` to `.env` and edit it), placed in any directory:
 
 ```bash
-cd docker
-export SESSION_SECRET="$(openssl rand -hex 48)"
 docker compose pull        # use the prebuilt GHCR image (recommended)
 docker compose up -d
 ```
 
-A local build also works:
+A local build also works when the repository is checked out:
 
 ```bash
+cd docker
 docker compose up -d --build
 ```
 

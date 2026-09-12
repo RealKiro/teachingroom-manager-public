@@ -54,43 +54,45 @@ Recommended order: use Docker Compose when you have a server or NAS; pick the Wo
 
 ### Docker Compose (recommended, works for both servers and Synology NAS)
 
-No development skills required: GitHub Actions builds the image automatically inside your own repository. You only need to fork, click run once, and start the container.
+The image is published on GHCR — **no fork, no build required**. Two files are enough: `docker-compose.yml` and `.env`.
 
-**Step 1: fork the repository and build your own image**
-
-1. Sign in to GitHub, open this repository, and click **Fork** (top right) to copy it to your account.
-2. Open the **Actions** tab of your fork; workflows are disabled on first visit — click **I understand my workflows, go ahead and enable them**.
-3. Pick the **Docker** workflow on the left → **Run workflow** → confirm. Wait 5-10 minutes until it turns green ✓.
-4. Back on the repository home page, the **Packages** sidebar (or your avatar → Your packages) now contains the image `teachingroom-manager-public`. Open it → **Package settings** → **Danger Zone** → **Change visibility** → set to **Public** (so the NAS and server can pull without logging in).
-
-**Step 2: get the repository files onto the machine**
-
-- Synology NAS: click **Code → Download ZIP** on GitHub, extract it, and use File Station to upload the whole folder to the NAS `docker` share (e.g. `/volume1/docker/teachingroom`). Upload the entire folder, not just the `docker/` subfolder.
-- Server: log in over SSH and run `git clone https://github.com/<your-username>/teachingroom-manager-public.git` (or download and extract the ZIP the same way).
-
-**Step 3: create one configuration file**
-
-Create a `.env` file inside the repository's `docker` folder with two lines:
+**Step 1: create a directory and put two files in it**
 
 ```bash
-cd <repository>/docker
-echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
-echo "TEACHINGROOM_IMAGE=ghcr.io/<your-username>/teachingroom-manager-public:latest" >> .env
+mkdir teachingroom && cd teachingroom
+curl -O https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/.env.example
 ```
 
-Replace `<your-username>` with your GitHub username. `SESSION_SECRET` is the site secret — any long random string works (a password generator is fine). You do not need to edit `docker-compose.yml` itself.
+You can also download both files from the `docker/` folder on GitHub in a browser, or grab the whole repository as a ZIP.
 
-**Step 4: start**
+**Step 2: edit `.env` (only one change is required)**
+
+Open `.env` in any text editor and replace `SESSION_SECRET` with a long random string (a password generator is fine); it is recommended to also uncomment `INITIAL_ADMIN_PASSWORD` and set the first admin password:
+
+```ini
+SESSION_SECRET=paste-your-long-random-string-here
+INITIAL_ADMIN_PASSWORD=first-admin-password-at-least-12-chars
+```
+
+**Step 3: start and verify**
 
 ```bash
-docker compose pull
 docker compose up -d
 curl http://127.0.0.1:3000/api/health   # {"ok":true,...} means success
 ```
 
-**Synology GUI start (no SSH needed)**: after steps 1-3 (the `.env` can be created in File Station with a text editor), open Container Manager → **Project** → **Create** → set the path to `/docker/teachingroom/docker` → choose "Use an existing docker-compose.yml" → step through and start.
+The first startup imports a synthetic demo dataset — delete it in the UI before real use, or initialize by uploading your own Excel file.
 
-All data lives in the `data/`, `backups/`, `uploads/`, and `exports/` folders under the repository directory — back those up (or use Hyper Backup) to preserve everything. To update later: on your fork click **Sync fork → Update branch**, wait for the Actions build to turn green, then repeat step 4 on the NAS/server.
+**Synology NAS (GUI, no SSH needed)**:
+
+1. In File Station, create a `teachingroom` folder in the `docker` share and put the two files inside (`.env` can be created and edited with File Station's built-in text editor);
+2. Container Manager → **Project** → **Create** → set the path to that folder → choose "Use an existing docker-compose.yml" → step through and start;
+3. Then open `http://<NAS_IP>:3000`.
+
+**Data and updates**: all data lives in the `data/`, `backups/`, `uploads/`, and `exports/` folders next to the compose file — back those up regularly. Updating is just `docker compose pull && docker compose up -d`.
+
+> Note: the image is pulled from `ghcr.io/realkiro/teachingroom-manager-public:latest`; if a login is required, the repository owner must set the package to Public in the GitHub Packages settings (one-time). Alternatively point `TEACHINGROOM_IMAGE` in `.env` at an image built from your own fork.
 
 ### Cloudflare Workers (free-tier friendly, experimental)
 

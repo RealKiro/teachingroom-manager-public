@@ -54,43 +54,45 @@
 
 ### Docker Compose（推荐，服务器与群晖 NAS 通用）
 
-不需要懂开发：镜像由 GitHub Actions 在你自己的仓库里自动构建并发布，你只需要 Fork、点一次运行、然后启动容器。
+镜像已发布在 GHCR，**不需要 Fork 仓库、不需要构建**，两个文件就能跑起来：`docker-compose.yml` 和 `.env`。
 
-**第 1 步：Fork 仓库，构建你自己的镜像**
-
-1. 登录 GitHub，打开本仓库，点击右上角 **Fork**（创建到你自己的账号下）。
-2. 进入你 Fork 后的仓库，打开 **Actions** 标签页，首次会提示工作流被禁用，点击 **I understand my workflows, go ahead and enable them** 启用。
-3. 在 Actions 左侧选择 **Docker** 工作流 → 右侧 **Run workflow** → 确认运行，等待 5-10 分钟变绿 ✓。
-4. 回到仓库首页，右侧栏出现 **Packages**（或点个人头像 → Your packages），里面就有镜像 `teachingroom-manager-public`。点进去 → **Package settings** → **Danger Zone** → **Change visibility** → 改为 **Public**（公开后 NAS 和服务器无需登录即可拉取镜像）。
-
-**第 2 步：把仓库文件放到机器上**
-
-- 群晖 NAS：在 GitHub 仓库页面点 **Code → Download ZIP**，解压后用 File Station 把整个文件夹上传到 NAS 的 `docker` 共享文件夹（例如 `/volume1/docker/teachingroom`）。注意是整个文件夹，不要只上传 `docker/` 子目录。
-- 服务器：SSH 登录后 `git clone https://github.com/<你的用户名>/teachingroom-manager-public.git`（或同样下载 ZIP 解压）。
-
-**第 3 步：写一个配置文件**
-
-在仓库的 `docker` 子目录里创建 `.env` 文件，内容两行：
+**第 1 步：新建一个目录，放入两个文件**
 
 ```bash
-cd <仓库目录>/docker
-echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
-echo "TEACHINGROOM_IMAGE=ghcr.io/<你的用户名>/teachingroom-manager-public:latest" >> .env
+mkdir teachingroom && cd teachingroom
+curl -O https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/.env.example
 ```
 
-把 `<你的用户名>` 换成你的 GitHub 用户名。`SESSION_SECRET` 是站点密钥，任意长随机字符串都可以（用密码生成器生成也行）。不需要改 `docker-compose.yml` 本身。
+也可以在 GitHub 网页上打开 `docker/` 目录手动下载这两个文件，或整包 Download ZIP。
 
-**第 4 步：启动**
+**第 2 步：修改 `.env`（只有一处必改）**
+
+用任意文本编辑器打开 `.env`，把 `SESSION_SECRET` 换成一个长随机字符串（密码生成器生成即可）；建议顺手取消 `INITIAL_ADMIN_PASSWORD` 的注释并设置首次管理员密码：
+
+```ini
+SESSION_SECRET=把这里换成你的长随机字符串
+INITIAL_ADMIN_PASSWORD=首次管理员密码至少12位
+```
+
+**第 3 步：启动并验证**
 
 ```bash
-docker compose pull
 docker compose up -d
 curl http://127.0.0.1:3000/api/health   # 返回 {"ok":true,...} 即成功
 ```
 
-**群晖图形界面启动（全程不用 SSH）**：完成第 1-3 步后（`.env` 可在 File Station 里用文本编辑器创建），打开 Container Manager → **项目** → **新增** → 路径选择 `/docker/teachingroom/docker` → 来源选"使用现有的 docker-compose.yml" → 一路下一步并启动。
+首次启动会自动导入一份虚构演示数据，正式使用前在界面里删除，或直接上传你自己的 Excel 初始化。
 
-数据都保存在仓库目录下的 `data/`、`backups/`、`uploads/`、`exports/` 文件夹里，备份这些文件夹（或用 Hyper Backup）即可保全全部数据。日常更新版本：在 Fork 仓库页面点 **Sync fork → Update branch**，等 Actions 构建变绿后在 NAS/服务器上重新执行第 4 步即可。
+**群晖 NAS（图形界面，全程不用 SSH）**：
+
+1. File Station 在 `docker` 共享文件夹里新建 `teachingroom` 目录，把上面两个文件放进去（`.env` 可用 File Station 内置文本编辑器直接创建和修改）；
+2. Container Manager → **项目** → **新增** → 路径选择该目录 → 来源选"使用现有的 docker-compose.yml" → 一路下一步并启动；
+3. 完成后通过 `http://<NAS_IP>:3000` 访问。
+
+**数据与更新**：全部数据保存在 compose 目录旁的 `data/`、`backups/`、`uploads/`、`exports/` 四个文件夹里，定期备份它们即可。更新版本只需 `docker compose pull && docker compose up -d`。
+
+> 注：镜像从 `ghcr.io/realkiro/teachingroom-manager-public:latest` 拉取；若提示需要登录，请仓库所有者在 GitHub Packages 设置中把该包改为 Public（只需做一次）。想在 `.env` 里把 `TEACHINGROOM_IMAGE` 指向自己 Fork 构建的镜像也可以。
 
 ### Cloudflare Workers（免费额度可跑，实验性）
 

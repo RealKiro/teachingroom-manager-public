@@ -120,19 +120,21 @@ systemctl is-active teachingroom.service
 
 ## Docker Compose
 
-Docker-related files live in the `docker/` directory (`Dockerfile`, `docker-compose.yml`). Run commands from within `docker/`:
+Docker-related files live in the `docker/` directory (`Dockerfile`, `docker-compose.yml`, `.env.example`). The simplest flow needs only two files (see [docker/README.md](./docker/README.md) and [README.en.md](./README.en.md)):
 
 ```bash
-export SESSION_SECRET="$(openssl rand -hex 48)"
-docker compose pull        # use the prebuilt GHCR image (recommended)
+mkdir teachingroom && cd teachingroom
+curl -O https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/.env.example
+# Edit .env: set SESSION_SECRET (required) and INITIAL_ADMIN_PASSWORD (recommended)
 docker compose up -d
 docker compose ps
 docker compose logs -f
 ```
 
-A fully local build also works: `docker compose up -d --build`.
+Checking out the whole repository and running `docker compose up -d --build` inside `docker/` also works for a local build.
 
-The Compose file persists runtime data in the repository root under `data/` and `exports/`.
+The Compose file persists runtime data in the `data/`, `backups/`, `uploads/`, and `exports/` folders next to the compose file.
 
 For production, set a strong `SESSION_SECRET` before starting; when omitted, the system generates and persists one into `data/session-secret.txt`.
 

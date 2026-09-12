@@ -60,6 +60,7 @@ teachingroom/
 ├── docker/
 │   ├── Dockerfile                 # node:24-alpine 多阶段构建
 │   ├── docker-compose.yml         # 镜像名可用 TEACHINGROOM_IMAGE 覆盖
+│   ├── .env.example                    # 配置模板，复制为 .env 使用
 │   └── README.md
 ├── README.md / README.en.md
 ├── DEPLOYMENT.md / DEPLOYMENT.en.md

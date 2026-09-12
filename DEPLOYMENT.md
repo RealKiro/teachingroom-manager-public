@@ -120,28 +120,21 @@ systemctl is-active teachingroom.service
 
 ## Docker Compose 部署
 
-Docker 相关文件集中在 `docker/` 目录（`Dockerfile`、`docker-compose.yml`）。在 `docker/` 目录内执行：
+Docker 相关文件集中在 `docker/` 目录（`Dockerfile`、`docker-compose.yml`、`.env.example`）。最简方式只需要两个文件（详见 [docker/README.md](./docker/README.md) 与 [README.md](./README.md)）：
 
 ```bash
-export SESSION_SECRET="$(openssl rand -hex 48)"
-docker compose pull        # 使用 GHCR 预构建镜像（推荐）
+mkdir teachingroom && cd teachingroom
+curl -O https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/RealKiro/teachingroom-manager-public/main/docker/.env.example
+# 编辑 .env：设置 SESSION_SECRET（必改）与 INITIAL_ADMIN_PASSWORD（建议）
 docker compose up -d
 docker compose ps
 docker compose logs -f
 ```
 
-也可以完全本地构建：
+也可以检出整个仓库后在 `docker/` 目录内 `docker compose up -d --build` 本地构建。
 
-```bash
-docker compose up -d --build
-```
-
-Compose 文件会把运行数据保存在仓库根目录：
-
-```text
-data/
-exports/
-```
+Compose 文件会把运行数据保存在 compose 文件同目录的 `data/`、`backups/`、`uploads/`、`exports/` 四个文件夹中。
 
 正式部署前请设置强随机 `SESSION_SECRET`；未设置时系统会自动生成并持久化到 `data/session-secret.txt`。
 
