@@ -136,6 +136,27 @@ exports/
 
 For production, set a strong `SESSION_SECRET` before starting.
 
+### Prebuilt image
+
+The image is based on `node:24-alpine` (always tracking the latest Alpine release), built in multiple stages, runs as the non-root `node` user, and ships with an `/api/health` healthcheck. Pushes to the `main` branch and `v*` tags trigger GitHub Actions to build `linux/amd64` and `linux/arm64` images and publish them to GHCR; if the `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` repository secrets are configured, the same images are published to Docker Hub.
+
+Without editing the Compose file you can also run the prebuilt image directly (mount the data directory at `/app/data`):
+
+```bash
+docker run -d --name teachingroom-manager -p 3000:3000 \
+  -e SESSION_SECRET="$(openssl rand -hex 48)" \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/<OWNER>/teachingroom-manager-public:latest
+```
+
+The GHCR image path uses the lowercased repository path (`ghcr.io/<owner>/<repo>`). The first push creates a private package; you can make it public in the repository's Packages settings.
+
+### CI/CD notes
+
+- `.github/workflows/ci.yml` runs `npm test` on Node.js 20/22/24.
+- `.github/workflows/docker.yml` builds the image, boots a container for an `/api/health` smoke test, and publishes only after it passes; pull requests build without publishing.
+- `.github/dependabot.yml` checks npm dependencies, the Dockerfile base image (`node:24-alpine`, Node major pinned), and Actions versions weekly.
+
 ## Data Files
 
 Runtime files are not committed:

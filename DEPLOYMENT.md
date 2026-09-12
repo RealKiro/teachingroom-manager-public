@@ -136,6 +136,27 @@ exports/
 
 正式部署前请设置强随机 `SESSION_SECRET`。
 
+### 预构建镜像
+
+镜像基于 `node:24-alpine`（始终跟随 Alpine 最新版本），多阶段构建、以非 root 用户 `node` 运行，内置 `/api/health` 健康检查。推送到 main 分支或打 `v*` 标签时，GitHub Actions 自动构建 `linux/amd64` 和 `linux/arm64` 双架构镜像并发布到 GHCR；如已配置 `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` 仓库密钥，会同步发布到 Docker Hub。
+
+不修改 Compose 文件时，也可以直接运行预构建镜像（把数据目录挂载到 `/app/data` 等路径）：
+
+```bash
+docker run -d --name teachingroom-manager -p 3000:3000 \
+  -e SESSION_SECRET="$(openssl rand -hex 48)" \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/<OWNER>/teachingroom-manager-public:latest
+```
+
+GHCR 镜像地址使用仓库路径的小写形式（`ghcr.io/<owner>/<repo>`）。首次推送后，包默认为私有，可在仓库 Packages 设置中改为公开。
+
+### CI/CD 说明
+
+- `.github/workflows/ci.yml`：在 Node.js 20/22/24 三个版本上运行 `npm test`。
+- `.github/workflows/docker.yml`：先构建镜像并启动容器做 `/api/health` 冒烟测试，通过后发布镜像；Pull Request 只构建测试、不发布。
+- `.github/dependabot.yml`：每周检查 npm 依赖、Dockerfile 基础镜像（`node:24-alpine`，锁定 Node 大版本）和 Actions 版本更新。
+
 ## 数据文件
 
 运行文件不会提交到 Git：

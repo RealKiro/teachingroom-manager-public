@@ -12,7 +12,11 @@ output/
 .playwright-cli/
 .playwright-mcp/
 .git/
+.github/
 .env
 npm-debug.log*
 ~$*
 .DS_Store
+tests/
+docs/
+*.md

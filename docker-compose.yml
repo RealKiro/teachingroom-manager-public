@@ -1,7 +1,9 @@
 services:
   teachingroom:
     build: .
+    image: teachingroom-manager:local
     container_name: teachingroom-manager
+    init: true
     ports:
       - "3000:3000"
     environment:
