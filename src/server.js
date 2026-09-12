@@ -30,11 +30,16 @@ async function loadExcelModule() {
 }
 
 const app = express();
-const require = createRequire(import.meta.url);
+let serverRequire = null;
+function getServerRequire() {
+  // 惰性创建 require（同 db-driver.js：workerd 模块顶层无 import.meta.url）
+  if (!serverRequire) serverRequire = createRequire(import.meta.url);
+  return serverRequire;
+}
 let DatabaseClass = null;
 function getDatabaseClass() {
   // 惰性加载原生模块：Workers 环境不会走到这里（备份校验/转换仅在本地或 Vercel Node 运行时使用）
-  if (!DatabaseClass) DatabaseClass = require("better-sqlite3");
+  if (!DatabaseClass) DatabaseClass = getServerRequire()("better-sqlite3");
   return DatabaseClass;
 }
 const port = Number(process.env.PORT || 3000);

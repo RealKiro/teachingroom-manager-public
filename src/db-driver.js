@@ -3,7 +3,13 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url);
+// 惰性创建 require：workerd 打包后模块顶层 import.meta.url 为 undefined，
+// 而 native 模块加载仅存在于本地/Vercel 分支
+let nodeRequire = null;
+function getNodeRequire() {
+  if (!nodeRequire) nodeRequire = createRequire(import.meta.url);
+  return nodeRequire;
+}
 
 // 存储驱动层：为业务代码提供 better-sqlite3 兼容接口。
 //  - file      本地文件（better-sqlite3 原样返回，本机/Docker 行为不变）
@@ -29,7 +35,7 @@ export function openDatabase({ dbPath } = {}) {
   const driver = currentDriverName();
   if (driver === "libsql") return createLibsqlCompat();
   if (driver === "do-sqlite") return createDoSqliteCompat(doStorage);
-  const Database = require("better-sqlite3");
+  const Database = getNodeRequire()("better-sqlite3");
   return new Database(dbPath);
 }
 
@@ -125,7 +131,7 @@ function resolveBridgeWorkerPath() {
 }
 
 function createLibsqlCompat() {
-  const { Worker } = require("node:worker_threads");
+  const { Worker } = getNodeRequire()("node:worker_threads");
   const flags = new Int32Array(new SharedArrayBuffer(32));
   const resBuffer = new SharedArrayBuffer(BRIDGE_RESPONSE_CAP);
   const worker = new Worker(resolveBridgeWorkerPath());

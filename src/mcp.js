@@ -1,19 +1,17 @@
 import express from "express";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const { name, version } = require("../package.json");
 
 // 标准 MCP（Model Context Protocol）服务端：Streamable HTTP 传输，
 // 遵循 https://modelcontextprotocol.io 规范，任何标准 MCP 客户端均可接入。
+// 注意：版本号与 package.json 保持同步（不在模块顶层用 createRequire 读取，
+// 以兼容 workerd 打包环境）
 const JSON_RPC_VERSION = "2.0";
 const LATEST_PROTOCOL_VERSION = "2025-06-18";
 const supportedProtocolVersions = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
 
 const serverInfo = {
-  name,
+  name: "teachingroom-manager",
   title: "教室设备管理系统",
-  version
+  version: "0.1.0"
 };
 
 const toolDefinitions = [
