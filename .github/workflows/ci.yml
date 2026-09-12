@@ -27,3 +27,55 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  workers-smoke:
+    name: Workers smoke test (wrangler dev)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start wrangler dev
+        run: |
+          npx --yes wrangler@latest dev --port 8787 \
+            --var SESSION_SECRET:ci-workers-smoke-secret \
+            --var INITIAL_ADMIN_PASSWORD:ci-workers-password \
+            > wrangler-dev.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
+              echo "worker ready"
+              break
+            fi
+            if [ "$i" -eq 90 ]; then
+              echo "::error::worker did not become ready"
+              cat wrangler-dev.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Smoke test API
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1:8787/api/health | grep -q '"ok":true'
+          curl -fsS -c /tmp/cookies -X POST http://127.0.0.1:8787/api/login \
+            -H 'content-type: application/json' \
+            -d '{"username":"admin","password":"ci-workers-password"}' | grep -q '"username":"admin"'
+          curl -fsS -b /tmp/cookies http://127.0.0.1:8787/api/fields | grep -q 'building'
+          curl -fsS -b /tmp/cookies -X POST http://127.0.0.1:8787/api/classrooms \
+            -H 'content-type: application/json' \
+            -d '{"values":{"building":"X栋","room":"X101"},"clientRequestId":"ci-workers-classroom-01"}' | grep -q '"created"'
+          curl -fsS -b /tmp/cookies -X POST http://127.0.0.1:8787/api/backups | grep -q 'teachingroom-'
+          curl -fsS -b /tmp/cookies http://127.0.0.1:8787/api/backups | grep -q 'manual'
+          echo "Workers smoke test passed"
+
+      - name: Print wrangler logs on failure
+        if: failure()
+        run: cat wrangler-dev.log

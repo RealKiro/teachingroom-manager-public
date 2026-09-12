@@ -59,10 +59,11 @@ npm start
 | Render 免费实例 | 有 | ⚠️ 仅演示 | 15 分钟无访问休眠，磁盘不持久，重启丢数据 |
 | Koyeb / Hugging Face Spaces | 有 | ⚠️ 仅演示 | 同样磁盘不持久 |
 | Railway / Fly.io | 一次性 $5 试用金 | ❌ | 额度用完即收费 |
-| Cloudflare Workers 免费版 | 有 | ❌ | 无法运行原生 SQLite 模块和本地文件存储 |
+| Cloudflare Workers 免费版 | 10 万请求/天 + DO SQLite 存储 | ⚠️ 实验性支持 | 已适配（数据存 Durable Objects 内置 SQLite），见下文 |
+| Vercel 免费版 | 函数执行 + 每日 Cron | ⚠️ 实验性支持 | 已适配（需外接 Turso 免费远程 SQLite），见下文 |
 | Cloudflare Containers | ❌ | ❌ | 必须 Workers 付费计划（$5/月起） |
 
-一句话结论：**数据要持久，纯免费 serverless 都做不到**。想白嫖就走"免费 VM 跑 Docker Compose"路线（Oracle Cloud / GCP），或者直接用现成的群晖 NAS；Cloudflare 免费额度只有把项目重写成 D1 + R2 架构才能用（工程量大，不推荐）。各平台政策会变化，部署前以官方文档为准。
+一句话结论：数据必须落盘的平台（Render/Koyeb 等）只能当临时演示。**本项目已适配两条真正可白嫖的无服务器路线**——Cloudflare Workers（数据存 Durable Objects 内置 SQLite）和 Vercel（数据存 Turso 免费远程 SQLite），小规模使用免费额度足够；对数据可靠性要求更高或访问量更大时，仍推荐群晖 NAS 或免费 VM。各平台政策会变化，部署前以官方文档为准。
 
 ### 方式一：Docker Compose（推荐）
 
@@ -105,6 +106,68 @@ sudo docker compose up -d
 sudo docker compose logs -f
 ```
 
+### 方式二：Cloudflare Workers（免费额度可跑，实验性）
+
+应用已适配 Workers：整个 Express 应用跑在单个 Durable Object 里，数据存入 DO 内置 SQLite（业务代码与本地/Docker 完全一致）。
+
+```bash
+npm install
+npx wrangler login
+# 首次部署前设置环境变量（见下方无服务器环境变量表）
+npx wrangler deploy
+```
+
+也可以在 Cloudflare 控制台连接 GitHub 仓库自动部署。首次部署后请在 Workers 设置中配置环境变量（`SESSION_SECRET` 必填），并初始化管理员密码。
+
+注意事项：
+
+- 免费版限制：10 万请求/天；DO SQLite 存储免费额度较小，照片请控制体积（单张上限 8MB）。
+- Workers 上备份为 SQL 转储格式（`.sql`），不再是 SQLite 二进制文件；定时备份需配置 `CRON_SECRET` 并在 Cloudflare 控制台添加 Cron Trigger（`POST /api/cron/backup`）。
+- 200MB 的整库上传恢复受 Worker 内存限制，建议用"启用服务器备份"功能恢复本系统导出的 `.sql` 备份。
+- 兼容性依赖 `nodejs_compat` + `enable_nodejs_http_server_modules`（2025-09 起官方支持 Node HTTP 服务器与 Express），该能力较新，正式使用前请在自己的账号上完整验证。
+
+### 方式三：Vercel（免费额度可跑，实验性）
+
+Vercel 上数据库使用 Turso（libSQL 免费远程 SQLite，SQLite 方言零改动）：
+
+```bash
+# 1. 创建 Turso 数据库并获取连接信息
+npm install -g @turso/cli
+turso auth login
+turso db create teachingroom
+turso db show teachingroom --url          # → LIBSQL_URL
+turso db tokens create teachingroom       # → LIBSQL_AUTH_TOKEN
+
+# 2. 部署到 Vercel
+npm install -g vercel
+vercel link
+vercel env add LIBSQL_URL production
+vercel env add LIBSQL_AUTH_TOKEN production
+vercel env add SESSION_SECRET production   # 必填：openssl rand -hex 48
+vercel env add INITIAL_ADMIN_PASSWORD production
+vercel env add CRON_SECRET production      # 定时备份令牌，可选
+vercel --prod
+```
+
+也可以在 Vercel 控制台导入 GitHub 仓库后在 Environment Variables 中配置。Vercel Cron 会自动以 `vercel.json` 中的计划调用 `POST /api/cron/backup` 完成每日备份（备份为 `.sql` 转储，存于数据库内）。
+
+注意事项：
+
+- 平台限制：请求体上限 4.5MB（免费版）——照片（上限 8MB）与 Excel 大文件上传会失败，请压缩后使用；冷启动 1-3 秒。
+- Turso 免费档额度（5GB 存储、5 亿行读/月量级）对小团队远够用；额度以官方文档为准。
+
+### 无服务器环境变量（Workers / Vercel 通用）
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `SESSION_SECRET` | ✅ | 会话密钥，多实例内存不共享，必须显式提供 |
+| `LIBSQL_URL` | Vercel ✅ | Turso/libSQL 连接地址（如 `libsql://xxx.turso.io`）；Workers 不需要 |
+| `LIBSQL_AUTH_TOKEN` | Vercel ✅ | Turso 数据库令牌；Workers 不需要 |
+| `INITIAL_ADMIN_PASSWORD` | 建议 | 首次启动的管理员密码（≥12 位）；未设置时打印到部署平台日志 |
+| `CRON_SECRET` | 建议 | 定时备份令牌；设置后 `POST /api/cron/backup` 需要 `Authorization: Bearer <CRON_SECRET>` |
+| `BASE_DATA_API_TOKEN` | 可选 | 开放 API/MCP 令牌；未设置时从 `SESSION_SECRET` 派生稳定值 |
+| `SKIP_SOURCE_IMPORT` | 可选 | 无服务器模式默认跳过演示 Excel 导入（数据库为空时可在界面中上传 Excel 导入） |
+
 ### 免费 VM（Oracle Cloud / Google Cloud）
 
 在永久免费 VM 上安装 Docker 后，部署流程与"方式一"完全一致。额外注意：
@@ -113,7 +176,7 @@ sudo docker compose logs -f
 - GCP e2-micro 内存只有 1G，本项目足够（Node + SQLite 约占 100M），但不要在同机再跑其他服务。
 - 公网暴露前建议配置反向代理 + HTTPS，并设置强随机 `SESSION_SECRET`。
 
-### Cloudflare Containers（实验性，$5/月起）
+### Cloudflare Containers（$5/月起，零适配）
 
 预构建镜像可以直接跑在 Cloudflare Containers 上，但该功能**必须 Workers 付费计划**，没有免费额度；最小示例见 `deploy/cloudflare/`：
 
@@ -130,7 +193,7 @@ wrangler deploy
 - 镜像必须可公开拉取（GHCR 公开包或 Docker Hub 公开仓库）。
 - 配置字段以 [Cloudflare Containers 官方文档](https://developers.cloudflare.com/containers/) 为准。
 
-### Node.js 直接运行
+### 方式四：Node.js 直接运行
 
 见 [DEPLOYMENT.md](./DEPLOYMENT.md)，含 systemd 服务模板 `deploy/teachingroom.service`。
 

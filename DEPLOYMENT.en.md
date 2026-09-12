@@ -161,6 +161,15 @@ docker run -d --name teachingroom-manager -p 3000:3000 \
 - `.github/workflows/docker.yml` builds the image, boots a container for an `/api/health` smoke test, and publishes only after it passes; pull requests build without publishing.
 - `.github/dependabot.yml` checks npm dependencies, the Dockerfile base image (`docker/Dockerfile`, Node major pinned), and Actions versions weekly.
 
+## Serverless deployment (Vercel / Cloudflare Workers)
+
+The app now supports serverless runtimes: the storage layer in `src/db-driver.js` is pluggable — better-sqlite3 locally/in Docker, Turso (remote libSQL over a synchronous bridge) on Vercel, and Durable Objects built-in SQLite on Workers. Business code is identical across all three environments.
+
+- Vercel: `api/index.js` + `vercel.json` (with a daily Cron backup); database setup and required env vars are in [README.en.md](./README.en.md).
+- Cloudflare Workers: `wrangler.jsonc` + `src/worker.js` + `src/do.js`; deploy with `npx wrangler deploy`. Backups are `.sql` dumps.
+- Shared env vars (`SESSION_SECRET` required, `CRON_SECRET`, `INITIAL_ADMIN_PASSWORD`, …) are listed in the serverless table in [README.en.md](./README.en.md).
+- The `workers-smoke` CI job validates health, login, classroom creation, and backups with `wrangler dev` on every push.
+
 ## MCP Server
 
 The app exposes a standard MCP (Model Context Protocol) endpoint at `/mcp` over Streamable HTTP for bot frameworks such as AstrBot. Authentication shares the base-data API token (`X-API-Token` or `Authorization: Bearer` header), and the tool set is read-only (classroom inventory, classroom details, field definitions, statistics). See the MCP section in [README.en.md](./README.en.md) for an AstrBot configuration example.

@@ -15,6 +15,13 @@
 
 ## 记录
 
+### 2026-09-12 20:30:00 CST
+
+- 事件：公开脱敏版新增无服务器部署支持（Cloudflare Workers / Vercel）。
+- 分支：`main`
+- 备注：新增存储驱动层 `src/db-driver.js`（better-sqlite3 兼容接口）：本地保持 better-sqlite3 不变；Vercel 经 worker_threads + Atomics 同步桥接接入 Turso/libSQL；Workers 经 Durable Objects 内置 SQLite 驱动（Express 经官方 node:http 服务器兼容运行，无需重写路由）。备份模块双模式（本地文件复制 / 无服务器 SQL 转储表），新增 `POST /api/cron/backup` 定时备份端点；新增 `vercel.json`、`wrangler.jsonc`、`src/worker.js`、`src/do.js`、`api/index.js`；CI 新增 `workers-smoke` 作业（wrangler dev 冒烟）。不包含学校部署信息或运行数据。
+- 验证：新增 libsql 桥接应用级测试 4 项（启动、登录会话、备份转储与恢复、事务/嵌套保存点回滚）全部通过；全量 Node 测试 15 项通过 14 项（1 项为 Windows 本机 POSIX 权限断言限制，CI Ubuntu 环境通过）；Workers 冒烟由 CI 验证。
+
 ### 2026-09-12 17:40:00 CST
 
 - 事件：公开脱敏版重写 README，补充免费部署对比说明。

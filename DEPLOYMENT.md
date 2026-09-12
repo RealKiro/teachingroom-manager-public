@@ -170,6 +170,15 @@ docker run -d --name teachingroom-manager -p 3000:3000 \
 - `.github/workflows/docker.yml`：先构建镜像并启动容器做 `/api/health` 冒烟测试，通过后发布镜像；Pull Request 只构建测试、不发布。
 - `.github/dependabot.yml`：每周检查 npm 依赖、Dockerfile 基础镜像（`docker/Dockerfile`，锁定 Node 大版本）和 Actions 版本更新。
 
+## 无服务器部署（Vercel / Cloudflare Workers）
+
+应用已适配无服务器运行：存储层通过 `src/db-driver.js` 可插拔——本地/Docker 用 better-sqlite3，Vercel 用 Turso（libSQL 远程 SQLite，经同步桥接），Workers 用 Durable Objects 内置 SQLite。业务代码三个环境完全一致。
+
+- Vercel：`api/index.js` + `vercel.json`（含每日 Cron 备份），数据库建库步骤与必填环境变量见 [README.md](./README.md)。
+- Cloudflare Workers：`wrangler.jsonc` + `src/worker.js` + `src/do.js`，`npx wrangler deploy` 即可；备份为 `.sql` 转储。
+- 通用环境变量（`SESSION_SECRET` 必填、`CRON_SECRET`、`INITIAL_ADMIN_PASSWORD` 等）见 [README.md](./README.md) 的无服务器环境变量表。
+- CI 中的 `workers-smoke` 作业会在每次提交后用 `wrangler dev` 验证健康检查、登录、建教室与备份流程。
+
 ## MCP 服务端
 
 服务在 `/mcp` 暴露标准 MCP（Model Context Protocol）端点，使用 Streamable HTTP 传输，供 AstrBot 等机器人框架接入。鉴权与开放 API 共用同一令牌（`X-API-Token` 或 `Authorization: Bearer` 头），工具集为只读查询（教室台账、教室详情、字段定义、统计概览）。AstrBot 配置示例见 [README.md](./README.md) 的 MCP 章节。

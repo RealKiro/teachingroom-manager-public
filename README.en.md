@@ -59,10 +59,11 @@ All application data (SQLite database, photos, backups) must be **persistently s
 | Render free instances | Yes | ⚠️ Demo only | Sleeps after 15 idle minutes; ephemeral disk loses data |
 | Koyeb / Hugging Face Spaces | Yes | ⚠️ Demo only | Ephemeral disk as well |
 | Railway / Fly.io | One-time $5 trial credit | ❌ | Charges apply once credit is used up |
-| Cloudflare Workers free plan | Yes | ❌ | Cannot run the native SQLite module and local file storage |
+| Cloudflare Workers free plan | 100k requests/day + DO SQLite storage | ⚠️ Experimental support | Adapted (data lives in Durable Objects built-in SQLite), see below |
+| Vercel free tier | Function execution + daily Cron | ⚠️ Experimental support | Adapted (requires external Turso free remote SQLite), see below |
 | Cloudflare Containers | ❌ | ❌ | Requires the Workers Paid plan ($5/month minimum) |
 
-Bottom line: **pure free serverless cannot keep data persistent**. For a true free lunch, run Docker Compose on a free VM (Oracle Cloud / GCP) or use an existing NAS; Cloudflare's free tier would require rewriting the app to a D1 + R2 architecture (a large migration, not recommended). Platform policies change; always verify against official docs before deploying.
+Bottom line: platforms without persistent disk (Render/Koyeb etc.) are demo-only. **This app now ships with two genuinely free serverless paths** — Cloudflare Workers (data stored in Durable Objects built-in SQLite) and Vercel (data stored in Turso's free remote SQLite); the free tiers are enough for small teams. For stronger durability or higher traffic, a NAS or free VM is still recommended. Platform policies change; always verify against official docs before deploying.
 
 ### Option 1: Docker Compose (recommended)
 
@@ -105,6 +106,68 @@ sudo docker compose up -d
 sudo docker compose logs -f
 ```
 
+### Option 2: Cloudflare Workers (free-tier friendly, experimental)
+
+The app is adapted for Workers: the whole Express app runs inside a single Durable Object with data stored in the DO's built-in SQLite (business code identical to local/Docker runs).
+
+```bash
+npm install
+npx wrangler login
+# Configure environment variables before the first deploy (see the serverless env table below)
+npx wrangler deploy
+```
+
+You can also connect the GitHub repository in the Cloudflare dashboard for automatic deploys. After the first deployment, set the environment variables in Worker settings (`SESSION_SECRET` is required).
+
+Notes:
+
+- Free plan limits: 100k requests/day; DO SQLite storage allowance is small, so keep photo sizes small (8MB per photo max).
+- Backups on Workers are SQL dumps (`.sql`), no longer SQLite binaries; scheduled backups require `CRON_SECRET` plus a Cron Trigger added in the dashboard (`POST /api/cron/backup`).
+- Restoring a 200MB uploaded database file is limited by Worker memory; prefer the "enable server backup" flow with a `.sql` dump exported by this system.
+- Compatibility relies on `nodejs_compat` + `enable_nodejs_http_server_modules` (official Node HTTP server / Express support since 2025-09). The capability is new — verify fully on your own account before production use.
+
+### Option 3: Vercel (free-tier friendly, experimental)
+
+On Vercel the database is Turso (free remote libSQL; SQLite dialect unchanged):
+
+```bash
+# 1. Create a Turso database and collect connection info
+npm install -g @turso/cli
+turso auth login
+turso db create teachingroom
+turso db show teachingroom --url          # → LIBSQL_URL
+turso db tokens create teachingroom       # → LIBSQL_AUTH_TOKEN
+
+# 2. Deploy to Vercel
+npm install -g vercel
+vercel link
+vercel env add LIBSQL_URL production
+vercel env add LIBSQL_AUTH_TOKEN production
+vercel env add SESSION_SECRET production   # required: openssl rand -hex 48
+vercel env add INITIAL_ADMIN_PASSWORD production
+vercel env add CRON_SECRET production      # optional token for scheduled backups
+vercel --prod
+```
+
+Alternatively import the GitHub repository in the Vercel dashboard and configure Environment Variables there. The Vercel Cron defined in `vercel.json` calls `POST /api/cron/backup` daily (backups are `.sql` dumps stored inside the database).
+
+Notes:
+
+- Platform limits: 4.5MB request body on the free plan — photos (8MB max) and large Excel uploads will fail; compress files first; 1-3s cold starts.
+- Turso's free allowance (5GB storage, ~500M row reads/month) is far more than a small team needs; check official docs for current limits.
+
+### Serverless environment variables (Workers / Vercel)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `SESSION_SECRET` | ✅ | Session secret; instances do not share memory, so it must be explicit |
+| `LIBSQL_URL` | Vercel ✅ | Turso/libSQL URL (e.g. `libsql://xxx.turso.io`); not needed on Workers |
+| `LIBSQL_AUTH_TOKEN` | Vercel ✅ | Turso database token; not needed on Workers |
+| `INITIAL_ADMIN_PASSWORD` | Recommended | First-boot admin password (≥12 chars); otherwise printed to the platform logs |
+| `CRON_SECRET` | Recommended | Scheduled-backup token; when set, `POST /api/cron/backup` requires `Authorization: Bearer <CRON_SECRET>` |
+| `BASE_DATA_API_TOKEN` | Optional | Open API/MCP token; derived deterministically from `SESSION_SECRET` when unset |
+| `SKIP_SOURCE_IMPORT` | Optional | Serverless mode skips the demo Excel import by default (empty databases can import via the UI) |
+
 ### Free VMs (Oracle Cloud / Google Cloud)
 
 After installing Docker on a permanently free VM, the deployment steps are identical to Option 1. Additional notes:
@@ -113,7 +176,7 @@ After installing Docker on a permanently free VM, the deployment steps are ident
 - The GCP e2-micro has 1 GB of RAM, which is enough for this app (Node + SQLite uses about 100 MB), but avoid co-locating other services.
 - Before exposing the app publicly, set up a reverse proxy with HTTPS and a strong random `SESSION_SECRET`.
 
-### Cloudflare Containers (experimental, from $5/month)
+### Cloudflare Containers (from $5/month, zero adaptation)
 
 The prebuilt image can run directly on Cloudflare Containers, but the feature **requires the Workers Paid plan** — there is no free tier. A minimal example lives in `deploy/cloudflare/`:
 
@@ -130,7 +193,7 @@ Notes:
 - The image must be publicly pullable (public GHCR package or public Docker Hub repository).
 - Configuration fields follow the [Cloudflare Containers documentation](https://developers.cloudflare.com/containers/).
 
-### Plain Node.js
+### Option 4: plain Node.js
 
 See [DEPLOYMENT.en.md](./DEPLOYMENT.en.md), including the systemd unit template `deploy/teachingroom.service`.
 

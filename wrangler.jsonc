@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "teachingroom-manager",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "enable_nodejs_http_server_modules"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "APP_DO", "class_name": "TeachingRoomApp" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TeachingRoomApp"] }
+  ],
+  "vars": {
+    "SKIP_SOURCE_IMPORT": "1"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

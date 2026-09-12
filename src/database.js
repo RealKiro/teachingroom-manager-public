@@ -1,17 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
+import { isServerlessDatabase, openDatabase } from "./db-driver.js";
 
 const rootDir = process.cwd();
-const dataDir = process.env.DATA_DIR || path.join(rootDir, "data");
+const dataDir = process.env.DATA_DIR || (isServerlessDatabase() ? "/tmp/data" : path.join(rootDir, "data"));
 const dbPath = process.env.DB_PATH || path.join(dataDir, "teachingroom.sqlite");
 const initialAdminPasswordPath = path.join(dataDir, "initial-admin-password.txt");
 
-fs.mkdirSync(dataDir, { recursive: true });
+try {
+  fs.mkdirSync(dataDir, { recursive: true });
+} catch {
+  // Workers 等环境没有可写文件系统，目录仅用于本地文件模式
+}
 
-export const db = new Database(dbPath);
+export const db = openDatabase({ dbPath });
 export { dataDir, dbPath, initialAdminPasswordPath };
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
@@ -285,12 +289,14 @@ function seedUsers() {
 
   stmt.run("admin", "超级管理员", "admin", bcrypt.hashSync(password, 10));
 
-  if (!configuredPassword) {
+  if (!configuredPassword && !isServerlessDatabase()) {
     fs.writeFileSync(
       initialAdminPasswordPath,
       `username=admin\npassword=${password}\n`,
       { encoding: "utf8", mode: 0o600 }
     );
+  } else if (!configuredPassword) {
+    console.log("Initial admin password (one-time, change after first login):", password);
   }
 }
 

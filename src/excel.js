@@ -58,6 +58,12 @@ export async function parseUploadedWorkbook(filePath, fields = []) {
   return extractClassroomRows(workbook, { includeBlankBackDoorForSource: false, fields });
 }
 
+export async function parseUploadedWorkbookBuffer(buffer, fields = []) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  return extractClassroomRows(workbook, { includeBlankBackDoorForSource: false, fields });
+}
+
 function extractClassroomRows(workbook, options = {}) {
   const rows = [];
   const headerMap = buildWorkbookHeaderMap(workbook, options.fields || []);

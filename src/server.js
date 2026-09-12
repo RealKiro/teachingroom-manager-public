@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import express from "express";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 import multer from "multer";
-import Database from "better-sqlite3";
 import {
   db,
   backfillClassroomHistory,
@@ -20,17 +20,30 @@ import {
   recordClassroomHistory,
   setClassroomValue
 } from "./database.js";
-import { buildExportWorkbook, importSourceExcelIfEmpty, parseUploadedWorkbook } from "./excel.js";
 import { applyTimelineRollback, buildTimelineRollbackPreview } from "./timeline-rollback.js";
 import { createMcpRouter } from "./mcp.js";
+import { isServerlessDatabase } from "./db-driver.js";
+
+// exceljs 体积较大，按需动态加载以控制 Workers 免费版的部署包体积
+async function loadExcelModule() {
+  return import("./excel.js");
+}
 
 const app = express();
+const require = createRequire(import.meta.url);
+let DatabaseClass = null;
+function getDatabaseClass() {
+  // 惰性加载原生模块：Workers 环境不会走到这里（备份校验/转换仅在本地或 Vercel Node 运行时使用）
+  if (!DatabaseClass) DatabaseClass = require("better-sqlite3");
+  return DatabaseClass;
+}
 const port = Number(process.env.PORT || 3000);
 const sessionMaxAge = 1000 * 60 * 60 * 10;
 const publicDir = path.join(process.cwd(), "public");
-const exportsDir = process.env.EXPORTS_DIR || path.join(process.cwd(), "exports");
-const uploadsDir = process.env.UPLOADS_DIR || path.join(process.cwd(), "uploads");
-const backupsDir = process.env.BACKUPS_DIR || path.join(process.cwd(), "backups");
+const serverlessMode = isServerlessDatabase();
+const exportsDir = process.env.EXPORTS_DIR || (serverlessMode ? "/tmp/teachingroom-exports" : path.join(process.cwd(), "exports"));
+const uploadsDir = process.env.UPLOADS_DIR || (serverlessMode ? "/tmp/teachingroom-uploads" : path.join(process.cwd(), "uploads"));
+const backupsDir = process.env.BACKUPS_DIR || (serverlessMode ? "/tmp/teachingroom-backups" : path.join(process.cwd(), "backups"));
 const backupMirrorDir = String(process.env.BACKUP_MIRROR_DIR || "").trim();
 const autoBackupKeep = normalizeAutoBackupKeep(process.env.AUTO_BACKUP_KEEP);
 const runtimeDataDir = path.dirname(dbPath);
@@ -38,18 +51,24 @@ const apiTokenPath = path.join(runtimeDataDir, "base-data-api-token.txt");
 const sessionSecretPath = path.join(runtimeDataDir, "session-secret.txt");
 const superAdminUsername = "admin";
 
-fs.mkdirSync(exportsDir, { recursive: true });
-fs.mkdirSync(uploadsDir, { recursive: true });
-fs.mkdirSync(backupsDir, { recursive: true });
+try {
+  fs.mkdirSync(exportsDir, { recursive: true });
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(backupsDir, { recursive: true });
+} catch {
+  // Workers 等环境没有可写文件系统；serverless 模式使用内存存储，目录仅本地文件模式需要
+}
 initDb();
-const importResult = process.env.SKIP_SOURCE_IMPORT === "1"
+const importResult = process.env.SKIP_SOURCE_IMPORT === "1" || serverlessMode
   ? { imported: false, count: db.prepare("SELECT COUNT(*) AS count FROM classrooms").get().count }
-  : await importSourceExcelIfEmpty();
+  : await (await loadExcelModule()).importSourceExcelIfEmpty();
 backfillClassroomHistory();
-const baseDataToken = getOrCreateBaseDataToken();
 const sessionSecret = getOrCreateSessionSecret();
+const baseDataToken = getOrCreateBaseDataToken();
 const upload = multer({
-  dest: uploadsDir,
+  ...(serverlessMode
+    ? { storage: multer.memoryStorage() }
+    : { dest: uploadsDir }),
   limits: { fileSize: 20 * 1024 * 1024 }
 });
 const photoUpload = multer({
@@ -57,11 +76,13 @@ const photoUpload = multer({
   limits: { fileSize: 8 * 1024 * 1024 }
 });
 const databaseUpload = multer({
-  dest: uploadsDir,
+  ...(serverlessMode
+    ? { storage: multer.memoryStorage() }
+    : { dest: uploadsDir }),
   limits: { fileSize: 200 * 1024 * 1024 }
 });
 const sessionStore = createSqliteSessionStore();
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !serverlessMode) {
   ensureDailyDatabaseBackup();
   scheduleDailyDatabaseBackup();
 }
@@ -543,7 +564,7 @@ app.post("/api/classroom-photo-requests/:id/review", requireAdmin, (req, res) =>
 app.post("/api/import-review", requireLogin, upload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "请上传 Excel 文件" });
-    const result = await createChangeRequestsFromWorkbook(req.file.path, req.file.originalname, req.session.user.id);
+    const result = await createChangeRequestsFromWorkbook(req.file.buffer ?? req.file.path, req.file.originalname, req.session.user.id);
     res.json(result);
   } catch (error) {
     next(error);
@@ -1026,6 +1047,11 @@ app.post("/api/backups", requireSuperAdmin, (req, res, next) => {
 app.get("/api/backups/:file/download", requireSuperAdmin, (req, res, next) => {
   try {
     const backup = getDatabaseBackup(req.params.file);
+    if (backup.content !== undefined) {
+      res.setHeader("Content-Type", "application/sql; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(backup.file)}`);
+      return res.send(Buffer.from(backup.content));
+    }
     res.download(backup.path, backup.file);
   } catch (error) {
     next(error);
@@ -1035,6 +1061,14 @@ app.get("/api/backups/:file/download", requireSuperAdmin, (req, res, next) => {
 app.post("/api/backups/:file/restore", requireSuperAdmin, (req, res, next) => {
   try {
     const backup = getDatabaseBackup(req.params.file);
+    if (serverlessMode) {
+      applyServerlessRestore(backup.content, req.session.user.id, {
+        source: "server_backup",
+        file: backup.file,
+        size: backup.size
+      });
+      return res.json({ ok: true, message: "备份已启用（无服务器模式即时生效），所有用户需重新登录" });
+    }
     queueDatabaseRestore(backup.path, req.session.user.id, {
       source: "server_backup",
       file: backup.file,
@@ -1049,6 +1083,24 @@ app.post("/api/backups/:file/restore", requireSuperAdmin, (req, res, next) => {
 app.post("/api/backups/upload-restore", requireSuperAdmin, databaseUpload.single("database"), (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "请上传 SQLite 数据库文件" });
+    if (serverlessMode) {
+      const source = req.file.buffer ?? fs.readFileSync(req.file.path);
+      if (Buffer.from(source.subarray(0, DATABASE_DUMP_HEADER.length)).toString("utf8") === DATABASE_DUMP_HEADER) {
+        applyServerlessRestore(source.toString("utf8"), req.session.user.id, {
+          source: "upload",
+          file: req.file.originalname,
+          size: req.file.size
+        });
+      } else {
+        validateDatabaseFile(source);
+        applyServerlessRestore(generateDatabaseDumpSql(new (getDatabaseClass())(source)), req.session.user.id, {
+          source: "upload",
+          file: req.file.originalname,
+          size: req.file.size
+        });
+      }
+      return res.json({ ok: true, message: "备份已启用（无服务器模式即时生效），所有用户需重新登录" });
+    }
     validateDatabaseFile(req.file.path);
     queueDatabaseRestore(req.file.path, req.session.user.id, {
       source: "upload",
@@ -1059,6 +1111,22 @@ app.post("/api/backups/upload-restore", requireSuperAdmin, databaseUpload.single
     res.json({ ok: true, message: "数据库文件已校验，服务会自动重启并启用上传的数据库" });
   } catch (error) {
     if (req.file?.path) fs.rm(req.file.path, { force: true }, () => {});
+    next(error);
+  }
+});
+
+app.post("/api/cron/backup", (req, res, next) => {
+  const cronSecret = String(process.env.CRON_SECRET || "");
+  if (cronSecret) {
+    const authorization = String(req.get("authorization") || "");
+    if (authorization !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: "Cron 令牌不正确" });
+    }
+  }
+  try {
+    ensureDailyDatabaseBackup();
+    res.json({ ok: true });
+  } catch (error) {
     next(error);
   }
 });
@@ -1268,7 +1336,7 @@ app.get("/api/export", requireLogin, async (req, res, next) => {
     const { records, summary } = getClassroomRecords(req.query);
     const allSummary = getClassroomRecords({}).summary;
     const fields = getFields();
-    const workbook = await buildExportWorkbook(records, fields, {
+    const workbook = await (await loadExcelModule()).buildExportWorkbook(records, fields, {
       query: req.query,
       summary,
       allSummary
@@ -1305,7 +1373,7 @@ export function startServer(listenPort = port, host = "0.0.0.0") {
   });
 }
 
-if (process.env.NODE_ENV !== "test") startServer();
+if (process.env.NODE_ENV !== "test" && !serverlessMode && !process.env.VERCEL) startServer();
 
 export { app, normalizeAutoBackupKeep, pruneDatabaseBackups };
 
@@ -1933,7 +2001,10 @@ function buildClassroomCreatePayloadFromImportRow(row, fields) {
 
 async function createChangeRequestsFromWorkbook(filePath, originalName, submitterId) {
   const currentFields = getFields();
-  const rows = await parseUploadedWorkbook(filePath, currentFields);
+  const excel = await loadExcelModule();
+  const rows = Buffer.isBuffer(filePath)
+    ? await excel.parseUploadedWorkbookBuffer(filePath, currentFields)
+    : await excel.parseUploadedWorkbook(filePath, currentFields);
   if (!rows.length) {
     return { importedRows: 0, requestsCreated: 0, changedFields: 0, unmatchedRows: [], message: "没有识别到可导入的教室行" };
   }
@@ -2250,6 +2321,10 @@ function formatBytes(value) {
 
 function getOrCreateBaseDataToken() {
   if (process.env.BASE_DATA_API_TOKEN) return process.env.BASE_DATA_API_TOKEN;
+  if (serverlessMode) {
+    // 无文件系统时从 SESSION_SECRET 派生稳定令牌，保证多实例一致
+    return crypto.createHmac("sha256", sessionSecret).update("base-data-api-token").digest("hex").slice(0, 48);
+  }
   fs.mkdirSync(path.dirname(apiTokenPath), { recursive: true });
   if (fs.existsSync(apiTokenPath)) return fs.readFileSync(apiTokenPath, "utf8").trim();
   const token = crypto.randomBytes(24).toString("hex");
@@ -2259,6 +2334,9 @@ function getOrCreateBaseDataToken() {
 
 function getOrCreateSessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (serverlessMode) {
+    throw new Error("无服务器部署必须通过环境变量 SESSION_SECRET 提供会话密钥（多实例内存不共享）");
+  }
   fs.mkdirSync(path.dirname(sessionSecretPath), { recursive: true });
   if (fs.existsSync(sessionSecretPath)) return fs.readFileSync(sessionSecretPath, "utf8").trim();
   const secret = crypto.randomBytes(48).toString("hex");
@@ -2266,7 +2344,89 @@ function getOrCreateSessionSecret() {
   return secret;
 }
 
+const DATABASE_DUMP_HEADER = "-- TeachingRoom database dump v1";
+
+function quoteSqlIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "bigint") return String(Number(value));
+  if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+    return `X'${Buffer.from(value).toString("hex")}'`;
+  }
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function generateDatabaseDumpSql(dbc = db) {
+  const tables = dbc.prepare(`
+    SELECT name, sql AS ddl
+    FROM sqlite_master
+    WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'app_backups'
+    ORDER BY rowid
+  `).all();
+  const indexes = dbc.prepare(`
+    SELECT name, sql AS ddl FROM sqlite_master
+    WHERE type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY rowid
+  `).all();
+  const lines = [DATABASE_DUMP_HEADER];
+  lines.push("PRAGMA foreign_keys = OFF;");
+  lines.push("BEGIN TRANSACTION;");
+  for (const { name } of tables) lines.push(`DROP TABLE IF EXISTS ${quoteSqlIdentifier(name)};`);
+  for (const { ddl } of tables) lines.push(`${String(ddl).replace(/\s+/g, " ").trim()};`);
+  for (const { name } of tables) {
+    const rows = dbc.prepare(`SELECT * FROM ${quoteSqlIdentifier(name)}`).all();
+    if (!rows.length) continue;
+    const columns = Object.keys(rows[0]);
+    const prefix = `INSERT INTO ${quoteSqlIdentifier(name)} (${columns.map(quoteSqlIdentifier).join(", ")}) VALUES (`;
+    for (const row of rows) {
+      lines.push(`${prefix}${columns.map((column) => sqlLiteral(row[column])).join(", ")});`);
+    }
+  }
+  if (tables.some((table) => table.name === "user_sessions")) {
+    lines.push("DELETE FROM user_sessions;");
+  }
+  for (const { ddl } of indexes) lines.push(`${String(ddl).replace(/\s+/g, " ").trim()};`);
+  lines.push("COMMIT;");
+  lines.push("PRAGMA foreign_keys = ON;");
+  return lines.join("\n");
+}
+
+function ensureAppBackupsTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_backups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      content TEXT NOT NULL
+    )
+  `);
+}
+
+function pruneServerlessBackups() {
+  db.prepare(`
+    DELETE FROM app_backups
+    WHERE kind = 'auto' AND id NOT IN (
+      SELECT id FROM app_backups WHERE kind = 'auto' ORDER BY file DESC LIMIT ?
+    )
+  `).run(autoBackupKeep);
+}
+
 function listDatabaseBackups() {
+  if (serverlessMode) {
+    ensureAppBackupsTable();
+    return db.prepare("SELECT file, kind, size, created_at AS createdAt FROM app_backups ORDER BY file DESC").all()
+      .map((backup) => ({
+        ...backup,
+        kindLabel: databaseBackupKindLabel(backup.kind),
+        sizeLabel: formatBytes(backup.size),
+        downloadUrl: `/api/backups/${encodeURIComponent(backup.file)}/download`
+      }));
+  }
   if (!fs.existsSync(backupsDir)) return [];
   return fs.readdirSync(backupsDir)
     .filter((file) => /^teachingroom-\d{8}-\d{6}-[a-z_]+\.sqlite$/.test(file))
@@ -2289,27 +2449,44 @@ function listDatabaseBackups() {
 }
 
 function createDatabaseBackup(kind = "manual") {
+  const safeKind = String(kind).replace(/[^a-z_]/g, "_") || "manual";
+  const file = `teachingroom-${beijingTimestampForFile()}-${safeKind}`;
+  if (serverlessMode) {
+    ensureAppBackupsTable();
+    const content = generateDatabaseDumpSql();
+    const size = Buffer.byteLength(content);
+    db.prepare("INSERT INTO app_backups (file, kind, size, created_at, content) VALUES (?, ?, ?, ?, ?)")
+      .run(`${file}.sql`, safeKind, size, formatBeijingDateTime(new Date()), content);
+    pruneServerlessBackups();
+    return {
+      file: `${file}.sql`,
+      kind: safeKind,
+      kindLabel: databaseBackupKindLabel(safeKind),
+      size,
+      sizeLabel: formatBytes(size),
+      createdAt: formatBeijingDateTime(new Date()),
+      downloadUrl: `/api/backups/${encodeURIComponent(`${file}.sql`)}/download`
+    };
+  }
   fs.mkdirSync(backupsDir, { recursive: true });
   db.pragma("wal_checkpoint(TRUNCATE)");
-  const safeKind = String(kind).replace(/[^a-z_]/g, "_") || "manual";
-  const file = `teachingroom-${beijingTimestampForFile()}-${safeKind}.sqlite`;
-  const backupPath = path.join(backupsDir, file);
+  const backupPath = path.join(backupsDir, `${file}.sqlite`);
   fs.copyFileSync(dbPath, backupPath);
   if (backupMirrorDir) {
     fs.mkdirSync(backupMirrorDir, { recursive: true });
-    fs.copyFileSync(backupPath, path.join(backupMirrorDir, file));
+    fs.copyFileSync(backupPath, path.join(backupMirrorDir, `${file}.sqlite`));
   }
   pruneDatabaseBackups(backupsDir);
   if (backupMirrorDir) pruneDatabaseBackups(backupMirrorDir);
   const stats = fs.statSync(backupPath);
   return {
-    file,
+    file: `${file}.sqlite`,
     kind: safeKind,
     kindLabel: databaseBackupKindLabel(safeKind),
     size: stats.size,
     sizeLabel: formatBytes(stats.size),
     createdAt: formatBeijingDateTime(new Date()),
-    downloadUrl: `/api/backups/${encodeURIComponent(file)}/download`
+    downloadUrl: `/api/backups/${encodeURIComponent(`${file}.sqlite`)}/download`
   };
 }
 
@@ -2325,10 +2502,22 @@ function pruneDatabaseBackups(directory) {
 
 function getDatabaseBackup(file) {
   const cleanFile = path.basename(String(file || ""));
-  if (!/^teachingroom-\d{8}-\d{6}-[a-z_]+\.sqlite$/.test(cleanFile)) {
+  const sqliteMatch = /^teachingroom-\d{8}-\d{6}-[a-z_]+\.sqlite$/.test(cleanFile);
+  const sqlMatch = /^teachingroom-\d{8}-\d{6}-[a-z_]+\.sql$/.test(cleanFile);
+  if (!sqliteMatch && !sqlMatch) {
     const error = new Error("备份文件名不正确");
     error.statusCode = 400;
     throw error;
+  }
+  if (sqlMatch) {
+    ensureAppBackupsTable();
+    const backup = db.prepare("SELECT file, size, content FROM app_backups WHERE file = ?").get(cleanFile);
+    if (!backup) {
+      const error = new Error("备份文件不存在");
+      error.statusCode = 404;
+      throw error;
+    }
+    return { file: cleanFile, size: backup.size, content: backup.content };
   }
   const backupPath = path.join(backupsDir, cleanFile);
   if (!fs.existsSync(backupPath)) {
@@ -2340,10 +2529,12 @@ function getDatabaseBackup(file) {
   return { file: cleanFile, path: backupPath, size: stats.size };
 }
 
-function validateDatabaseFile(filePath) {
+function validateDatabaseFile(source) {
   let restoreDb;
   try {
-    restoreDb = new Database(filePath, { readonly: true, fileMustExist: true });
+    restoreDb = Buffer.isBuffer(source)
+      ? new (getDatabaseClass())(source)
+      : new (getDatabaseClass())(source, { readonly: true, fileMustExist: true });
     const integrity = restoreDb.prepare("PRAGMA integrity_check").get();
     if (integrity.integrity_check !== "ok") throw new Error("SQLite 完整性检查未通过");
 
@@ -2361,6 +2552,24 @@ function validateDatabaseFile(filePath) {
   } finally {
     restoreDb?.close();
   }
+}
+
+function applyServerlessRestore(dumpSql, actorId, detail) {
+  if (!String(dumpSql || "").startsWith(DATABASE_DUMP_HEADER)) {
+    const error = new Error("不是有效的备份转储文件（需要本系统导出的 .sql 备份）");
+    error.statusCode = 400;
+    throw error;
+  }
+  const preRestore = createDatabaseBackup("before_restore");
+  try {
+    db.exec(dumpSql);
+  } catch (error) {
+    try { db.exec("ROLLBACK"); } catch { /* 事务可能已被数据库自动回滚 */ }
+    const restoreError = new Error(`备份启用失败：${error.message}`);
+    restoreError.statusCode = 500;
+    throw restoreError;
+  }
+  logAudit(actorId, "restore_database_backup", "database_backup", null, { ...detail, preRestoreBackup: preRestore.file });
 }
 
 function queueDatabaseRestore(sourcePath, actorId, detail) {
@@ -2405,8 +2614,12 @@ function writeRestoreAuditToRestoredDatabase(detail) {
 }
 
 function ensureDailyDatabaseBackup() {
-  pruneDatabaseBackups(backupsDir);
-  if (backupMirrorDir) pruneDatabaseBackups(backupMirrorDir);
+  if (serverlessMode) {
+    pruneServerlessBackups();
+  } else {
+    pruneDatabaseBackups(backupsDir);
+    if (backupMirrorDir) pruneDatabaseBackups(backupMirrorDir);
+  }
   const today = beijingTimestampForFile().slice(0, 8);
   const hasTodayAuto = listDatabaseBackups().some((backup) => backup.kind === "auto" && backup.file.includes(`-${today}-`));
   if (!hasTodayAuto) createDatabaseBackup("auto");

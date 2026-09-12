@@ -16,3 +16,4 @@ outputs/
 npm-debug.log*
 ~$*
 .DS_Store
+.zcode/
