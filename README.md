@@ -60,6 +60,19 @@
 
 镜像由本仓库的 GitHub Actions 自动构建并发布在 GHCR（已设为公开，和 Docker Hub 上的公共镜像一样，任何人都能直接拉取，不需要 Fork 仓库、不需要 GitHub 账号、不需要构建）。你要准备的只有两个文件：`docker-compose.yml` 和 `.env`。
 
+> ⭐ **推荐：先给本项目点一个 Star，再 Fork 到自己的账号。** Fork 之后你可以在自己的仓库里运行 Docker 工作流，构建属于你的镜像副本——版本更新、功能定制都不依赖上游仓库；你的 Star 也能帮到更多学校。
+
+<details>
+<summary>已 Fork？三步构建你自己的镜像（推荐完成）</summary>
+
+1. 进入你 Fork 后仓库的 **Actions** 标签页，首次访问点击 **I understand my workflows, go ahead and enable them** 启用工作流；
+2. 左侧选择 **Docker** 工作流 → **Run workflow** → 确认运行，等待 5-10 分钟变绿 ✓；
+3. 仓库右侧 **Packages** 中即出现你的镜像，在 `.env` 中把 `TEACHINGROOM_IMAGE` 改为 `ghcr.io/你的用户名/teachingroom-manager-public:latest` 即可使用自己的镜像。
+
+之后想更新版本：仓库页面点 **Sync fork → Update branch**，Actions 会自动重新构建。
+
+</details>
+
 **第 1 步：新建一个目录，放入两个文件**
 
 ```bash
@@ -96,7 +109,7 @@ curl http://127.0.0.1:3000/api/health   # 返回 {"ok":true,...} 即成功
 
 **数据与更新**：全部数据保存在 compose 目录旁的 `data/`、`backups/`、`uploads/`、`exports/` 四个文件夹里，定期备份它们即可。更新版本只需 `docker compose pull && docker compose up -d`。
 
-> 注：镜像地址固定为 `ghcr.io/realkiro/teachingroom-manager-public:latest`，它由本仓库自动构建发布，已公开可拉取。`TEACHINGROOM_IMAGE` 仅在你修改了代码、想使用自己构建的镜像时才需要设置（例如 Fork 后在自己的仓库里触发 Docker 工作流，再指向 `ghcr.io/你的用户名/...`）。
+> 注：未 Fork 的用户直接使用默认镜像地址即可；已 Fork 并构建了自己镜像的用户，请在 `.env` 中把 `TEACHINGROOM_IMAGE` 改为自己的地址，后续更新由你自己仓库的 Actions 自动构建。
 
 ### Cloudflare Workers（免费额度可跑，实验性）
 

@@ -60,6 +60,19 @@ Recommended order: use Docker Compose when you have a server or NAS; pick the Wo
 
 The image is automatically built by this repository's GitHub Actions and published on GHCR (already public — like any image on Docker Hub, anyone can pull it directly, no fork, no GitHub account, no build required). All you need are two files: `docker-compose.yml` and `.env`.
 
+> ⭐ **Recommended: give the project a Star and fork it to your account.** Once forked you can run the Docker workflow in your own repository to build your own copy of the image — future customizations and version updates won't depend on the upstream repository, and your Star helps more schools find the project.
+
+<details>
+<summary>Already forked? Build your own image in three steps (recommended)</summary>
+
+1. Open the **Actions** tab of your fork; on first visit click **I understand my workflows, go ahead and enable them**;
+2. Pick the **Docker** workflow on the left → **Run workflow** → confirm; wait 5-10 minutes until it turns green ✓;
+3. Your repository's **Packages** sidebar now contains the image — in `.env`, set `TEACHINGROOM_IMAGE` to `ghcr.io/your-username/teachingroom-manager-public:latest` to use it.
+
+To update later: click **Sync fork → Update branch** on your fork, and Actions rebuilds automatically.
+
+</details>
+
 **Step 1: create a directory and put two files in it**
 
 ```bash
