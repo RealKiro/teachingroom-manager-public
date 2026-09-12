@@ -6,7 +6,7 @@ TeachingRoom Manager is a lightweight browser-based classroom equipment data sys
 
 The repository includes `初始化数据表格（虚拟）.xlsx` for first-run demonstrations. It contains synthetic data only; the application supports classroom inventory, inspection updates, review workflows, Excel import/export, audit logs, rollback, backups, and read-only base-data integration.
 
-The app is designed for small internal teams. The expected user count is about ten people, so the runtime stays simple: Node.js, Express, SQLite, and plain frontend assets.
+The app is designed for small internal teams, so the runtime stays simple: Node.js, Express, SQLite, and plain frontend assets.
 
 ## Documentation
 
@@ -32,9 +32,13 @@ The app is designed for small internal teams. The expected user count is about t
 
 ## Quick Start
 
+Run locally with Node.js (for long-running production use, add systemd — see the deployment notes below):
+
 ```bash
+git clone https://github.com/RealKiro/teachingroom-manager-public.git
+cd teachingroom-manager-public
 npm install
-npm test
+npm test          # optional: run the full test suite
 npm start
 ```
 
@@ -49,23 +53,22 @@ The app has no fixed password and does not create an inspector automatically. Ch
 
 ## Which deployment option should you choose?
 
-All application data (SQLite database, photos, backups) must be **persistently stored on disk**, which defines the limits of free options:
+All application data (SQLite database, photos, backups) requires **persistent storage**, which defines the limits of each platform:
 
 | Platform | Free tier | Free lunch? | Notes |
 | --- | --- | --- | --- |
-| Own hardware (Synology NAS etc.) | Already owned | ✅ **Recommended** | Local data, zero cost, see below |
+| Own hardware (Synology NAS etc.) | Already owned | ✅ **Recommended** | Local data, zero cost |
 | Oracle Cloud Always Free | Permanently free ARM VM (4 OCPU / 24 GB) | ✅ | Best free option for public access |
 | Google Cloud Always Free | Permanently free e2-micro VM | ✅ | Card verification required; 1 GB RAM is enough here |
-| Render free instances | Yes | ⚠️ Demo only | Sleeps after 15 idle minutes; ephemeral disk loses data |
-| Koyeb / Hugging Face Spaces | Yes | ⚠️ Demo only | Ephemeral disk as well |
+| Cloudflare Workers | 100k requests/day + DO SQLite storage | ⚠️ Experimental | Adapted; data lives in Durable Objects built-in SQLite |
+| Vercel | Function execution + daily Cron | ⚠️ Experimental | Adapted; requires external Turso free remote SQLite |
+| Render / Koyeb / HF Spaces | Yes | ⚠️ Demo only | Ephemeral disk loses data on restart |
 | Railway / Fly.io | One-time $5 trial credit | ❌ | Charges apply once credit is used up |
-| Cloudflare Workers free plan | 100k requests/day + DO SQLite storage | ⚠️ Experimental support | Adapted (data lives in Durable Objects built-in SQLite), see below |
-| Vercel free tier | Function execution + daily Cron | ⚠️ Experimental support | Adapted (requires external Turso free remote SQLite), see below |
 | Cloudflare Containers | ❌ | ❌ | Requires the Workers Paid plan ($5/month minimum) |
 
-Bottom line: platforms without persistent disk (Render/Koyeb etc.) are demo-only. **This app now ships with two genuinely free serverless paths** — Cloudflare Workers (data stored in Durable Objects built-in SQLite) and Vercel (data stored in Turso's free remote SQLite); the free tiers are enough for small teams. For stronger durability or higher traffic, a NAS or free VM is still recommended. Platform policies change; always verify against official docs before deploying.
+Bottom line: the two serverless paths below (Cloudflare Workers and Vercel) are genuinely free for small teams; for stronger durability or higher traffic, a NAS or free VM is still recommended. Platform policies change; always verify against official docs before deploying.
 
-### Option 1: Docker Compose (recommended)
+### Docker Compose (recommended)
 
 GitHub Actions automatically tests, builds `linux/amd64` + `linux/arm64` images and publishes them to GHCR on every push to main and every `v*` tag:
 
@@ -106,7 +109,7 @@ sudo docker compose up -d
 sudo docker compose logs -f
 ```
 
-### Option 2: Cloudflare Workers (free-tier friendly, experimental)
+### Cloudflare Workers (free-tier friendly, experimental)
 
 The app is adapted for Workers: the whole Express app runs inside a single Durable Object with data stored in the DO's built-in SQLite (business code identical to local/Docker runs).
 
@@ -126,7 +129,7 @@ Notes:
 - Restoring a 200MB uploaded database file is limited by Worker memory; prefer the "enable server backup" flow with a `.sql` dump exported by this system.
 - Compatibility relies on `nodejs_compat` + `enable_nodejs_http_server_modules` (official Node HTTP server / Express support since 2025-09). The capability is new — verify fully on your own account before production use.
 
-### Option 3: Vercel (free-tier friendly, experimental)
+### Vercel (free-tier friendly, experimental)
 
 On Vercel the database is Turso (free remote libSQL; SQLite dialect unchanged):
 
@@ -170,7 +173,7 @@ Notes:
 
 ### Free VMs (Oracle Cloud / Google Cloud)
 
-After installing Docker on a permanently free VM, the deployment steps are identical to Option 1. Additional notes:
+After installing Docker on a permanently free VM, the deployment steps are identical to Docker Compose. Additional notes:
 
 - On Oracle Cloud, open port 3000 both in the console Security List and the instance firewall (iptables).
 - The GCP e2-micro has 1 GB of RAM, which is enough for this app (Node + SQLite uses about 100 MB), but avoid co-locating other services.
@@ -192,10 +195,6 @@ Notes:
 - **Container disk is not persistent**: SQLite data and uploaded photos are lost on restart or migration. Use it for demos and trials only.
 - The image must be publicly pullable (public GHCR package or public Docker Hub repository).
 - Configuration fields follow the [Cloudflare Containers documentation](https://developers.cloudflare.com/containers/).
-
-### Option 4: plain Node.js
-
-See [DEPLOYMENT.en.md](./DEPLOYMENT.en.md), including the systemd unit template `deploy/teachingroom.service`.
 
 ## MCP Integration (AstrBot and other bot frameworks)
 
@@ -298,7 +297,7 @@ Daily automatic backups are written to `backups/`; super administrators can also
 
 ## CI/CD
 
-- Pushes to main and `v*` tags trigger GitHub Actions to run tests (Node 20/22/24 matrix), build multi-arch images, smoke-test a container, and publish to GHCR (plus Docker Hub when its secrets are configured).
+- Pushes to main and `v*` tags trigger GitHub Actions to run tests (Node 20/22/24 matrix), smoke-test the Workers adaptation with `wrangler dev`, build multi-arch images, and publish to GHCR after a container smoke test (plus Docker Hub when its secrets are configured).
 - Pull requests build and test without publishing.
 - Dependabot checks npm dependencies, the base image, and Actions versions weekly.
 

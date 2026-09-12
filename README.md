@@ -6,7 +6,7 @@
 
 仓库附带 `初始化数据表格（虚拟）.xlsx`，用于演示首次初始化。该文件只包含虚构数据；系统支持教室台账、巡查更新、审核流程、Excel 导入导出、操作记录、数据回滚、数据库备份，以及面向其他部门的只读基础数据接口。
 
-本系统面向校内小团队使用，预计用户规模约 10 人，因此技术栈保持简单：Node.js、Express、SQLite 和原生前端页面。
+本系统面向校内小团队使用，因此技术栈保持简单：Node.js、Express、SQLite 和原生前端页面。
 
 ## 文档导航
 
@@ -30,11 +30,15 @@
 - 登录 session 保存到 SQLite；弱网提交进入浏览器持久队列并幂等补交。
 - 提供只读基础数据 API 和内置标准 MCP 服务端，便于其他部门或机器人（如 AstrBot）接入。
 
-## 快速开始（本地运行）
+## 快速开始
+
+本地直接用 Node.js 运行（生产环境长期运行建议配合 systemd，见下文部署说明）：
 
 ```bash
+git clone https://github.com/RealKiro/teachingroom-manager-public.git
+cd teachingroom-manager-public
 npm install
-npm test
+npm test          # 可选：运行完整测试
 npm start
 ```
 
@@ -49,23 +53,22 @@ npm start
 
 ## 部署方式怎么选？
 
-本项目的全部数据（SQLite 数据库、照片、备份）都要**持久落盘**，这决定了免费方案的边界：
+本项目的全部数据（SQLite 数据库、照片、备份）都需要**持久化存储**，这决定了各平台的适用边界：
 
 | 平台 | 免费额度 | 能否白嫖 | 说明 |
 | --- | --- | --- | --- |
-| 群晖 NAS 等自有设备 | 已有硬件 | ✅ **首选** | 数据在本机，零成本，见下文 |
-| Oracle Cloud 永久免费 | 永久免费 ARM VM（4 核 24G） | ✅ | 想要公网访问的最佳免费方案 |
+| 群晖 NAS 等自有设备 | 已有硬件 | ✅ **首选** | 数据在本机，零成本 |
+| Oracle Cloud 永久免费 | 永久免费 ARM VM（4 核 24G） | ✅ | 公网访问的最佳免费方案 |
 | Google Cloud Always Free | 永久免费 e2-micro VM | ✅ | 需绑卡验证，1G 内存够本项目用 |
-| Render 免费实例 | 有 | ⚠️ 仅演示 | 15 分钟无访问休眠，磁盘不持久，重启丢数据 |
-| Koyeb / Hugging Face Spaces | 有 | ⚠️ 仅演示 | 同样磁盘不持久 |
+| Cloudflare Workers | 10 万请求/天 + DO SQLite 存储 | ⚠️ 实验性 | 已适配，数据存 Durable Objects 内置 SQLite |
+| Vercel | 函数执行 + 每日 Cron | ⚠️ 实验性 | 已适配，需外接 Turso 免费远程 SQLite |
+| Render / Koyeb / HF Spaces | 有 | ⚠️ 仅演示 | 磁盘不持久，重启丢数据 |
 | Railway / Fly.io | 一次性 $5 试用金 | ❌ | 额度用完即收费 |
-| Cloudflare Workers 免费版 | 10 万请求/天 + DO SQLite 存储 | ⚠️ 实验性支持 | 已适配（数据存 Durable Objects 内置 SQLite），见下文 |
-| Vercel 免费版 | 函数执行 + 每日 Cron | ⚠️ 实验性支持 | 已适配（需外接 Turso 免费远程 SQLite），见下文 |
 | Cloudflare Containers | ❌ | ❌ | 必须 Workers 付费计划（$5/月起） |
 
-一句话结论：数据必须落盘的平台（Render/Koyeb 等）只能当临时演示。**本项目已适配两条真正可白嫖的无服务器路线**——Cloudflare Workers（数据存 Durable Objects 内置 SQLite）和 Vercel（数据存 Turso 免费远程 SQLite），小规模使用免费额度足够；对数据可靠性要求更高或访问量更大时，仍推荐群晖 NAS 或免费 VM。各平台政策会变化，部署前以官方文档为准。
+一句话结论：小团队想白嫖，Workers 和 Vercel 两条无服务器路线已可用且免费额度足够；对数据可靠性要求更高时，选群晖 NAS 或免费 VM。各平台政策会变化，部署前以官方文档为准。
 
-### 方式一：Docker Compose（推荐）
+### Docker Compose（推荐）
 
 GitHub Actions 在每次推送 main 或打 `v*` 标签时自动测试、构建 `linux/amd64` + `linux/arm64` 镜像并发布到 GHCR：
 
@@ -106,7 +109,7 @@ sudo docker compose up -d
 sudo docker compose logs -f
 ```
 
-### 方式二：Cloudflare Workers（免费额度可跑，实验性）
+### Cloudflare Workers（免费额度可跑，实验性）
 
 应用已适配 Workers：整个 Express 应用跑在单个 Durable Object 里，数据存入 DO 内置 SQLite（业务代码与本地/Docker 完全一致）。
 
@@ -117,7 +120,7 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-也可以在 Cloudflare 控制台连接 GitHub 仓库自动部署。首次部署后请在 Workers 设置中配置环境变量（`SESSION_SECRET` 必填），并初始化管理员密码。
+也可以在 Cloudflare 控制台连接 GitHub 仓库自动部署。首次部署后请在 Workers 设置中配置环境变量（`SESSION_SECRET` 必填）。
 
 注意事项：
 
@@ -126,7 +129,7 @@ npx wrangler deploy
 - 200MB 的整库上传恢复受 Worker 内存限制，建议用"启用服务器备份"功能恢复本系统导出的 `.sql` 备份。
 - 兼容性依赖 `nodejs_compat` + `enable_nodejs_http_server_modules`（2025-09 起官方支持 Node HTTP 服务器与 Express），该能力较新，正式使用前请在自己的账号上完整验证。
 
-### 方式三：Vercel（免费额度可跑，实验性）
+### Vercel（免费额度可跑，实验性）
 
 Vercel 上数据库使用 Turso（libSQL 免费远程 SQLite，SQLite 方言零改动）：
 
@@ -170,7 +173,7 @@ vercel --prod
 
 ### 免费 VM（Oracle Cloud / Google Cloud）
 
-在永久免费 VM 上安装 Docker 后，部署流程与"方式一"完全一致。额外注意：
+在永久免费 VM 上安装 Docker 后，部署流程与 Docker Compose 完全一致。额外注意：
 
 - Oracle Cloud 需要在控制台安全列表（Security List）和实例系统防火墙（iptables）中同时放行 3000 端口。
 - GCP e2-micro 内存只有 1G，本项目足够（Node + SQLite 约占 100M），但不要在同机再跑其他服务。
@@ -192,10 +195,6 @@ wrangler deploy
 - **容器磁盘不持久**：重启或迁移后 SQLite 数据与上传的照片会丢失，仅适合演示与试用。
 - 镜像必须可公开拉取（GHCR 公开包或 Docker Hub 公开仓库）。
 - 配置字段以 [Cloudflare Containers 官方文档](https://developers.cloudflare.com/containers/) 为准。
-
-### 方式四：Node.js 直接运行
-
-见 [DEPLOYMENT.md](./DEPLOYMENT.md)，含 systemd 服务模板 `deploy/teachingroom.service`。
 
 ## MCP 接入（AstrBot 等机器人框架）
 
@@ -298,7 +297,7 @@ exports/
 
 ## CI/CD
 
-- 推送 main 或打 `v*` 标签时，GitHub Actions 自动跑测试（Node 20/22/24 矩阵）、构建双架构镜像、容器冒烟测试后发布到 GHCR（配置 Docker Hub 密钥后同步发布）。
+- 推送 main 或打 `v*` 标签时，GitHub Actions 自动跑测试（Node 20/22/24 矩阵）、用 `wrangler dev` 冒烟验证 Workers 适配、构建双架构镜像、容器冒烟测试后发布到 GHCR（配置 Docker Hub 密钥后同步发布）。
 - Pull Request 只构建和测试，不发布。
 - Dependabot 每周检查 npm 依赖、基础镜像和 Actions 版本。
 
