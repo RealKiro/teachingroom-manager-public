@@ -1,0 +1,31 @@
+// Cloudflare Containers 部署示例（Containers 为 Beta，配置字段以官方文档为准：
+// https://developers.cloudflare.com/containers/）
+//
+// 使用前提：
+// 1. Cloudflare Workers 付费计划（Containers 需要）；
+// 2. 镜像必须可公开拉取：GHCR 包需在仓库 Packages 设置中改为 Public，
+//    或把 docker/docker-compose.yml 中的 image 换成 Docker Hub 公开仓库。
+//
+// 注意：容器磁盘不持久，重启或迁移后 SQLite 数据库与上传文件会丢失，
+// 仅适合演示与试用；生产数据请部署在 NAS/服务器上。
+{
+  "name": "teachingroom-manager",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  "containers": [
+    {
+      "name": "teachingroom",
+      "image": "ghcr.io/realkiro/teachingroom-manager-public:latest",
+      "max_instances": 1,
+      "limits": { "cpu": 1, "memory": "4GiB" }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONTAINER", "class_name": "TeachingRoomContainer" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TeachingRoomContainer"] }
+  ]
+}

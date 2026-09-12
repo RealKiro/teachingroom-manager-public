@@ -167,10 +167,18 @@ sudo systemctl restart teachingroom.service
 
 ## 8. Docker Compose Deployment
 
-Start:
+Docker-related files live in the repository's `docker/` directory (`Dockerfile`, `docker-compose.yml`). Work from that directory:
 
 ```bash
+cd docker
 export SESSION_SECRET="$(openssl rand -hex 48)"
+docker compose pull        # use the prebuilt GHCR image (recommended)
+docker compose up -d
+```
+
+A local build also works:
+
+```bash
 docker compose up -d --build
 ```
 

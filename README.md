@@ -36,6 +36,7 @@
 - 弱网提交会进入浏览器持久队列，并通过幂等请求自动补交。
 - 支持自动备份、手动备份、下载备份、上传备份和启用备份。
 - 提供只读基础数据 API，便于其他部门或内部系统接入。
+- 内置标准 MCP 服务端（`/mcp`，Streamable HTTP），可对接 AstrBot 等机器人框架。
 
 ## 快速开始
 
@@ -148,13 +149,104 @@ search=X101
 
 ## 部署
 
-仓库提供 systemd 服务模板：
+支持三种方式：Docker Compose（推荐）、Cloudflare Containers（实验性）、Node.js 直接运行。Docker 相关文件集中在 `docker/` 目录，文件说明见 [docker/README.md](./docker/README.md)。
+
+### 方式一：Docker Compose（推荐，适合服务器与群晖 NAS）
+
+GitHub Actions 会在每次推送 main 或打 `v*` 标签时自动测试、构建 `linux/amd64` + `linux/arm64` 镜像并发布到 GHCR：
 
 ```text
-deploy/teachingroom.service
+ghcr.io/realkiro/teachingroom-manager-public:latest
 ```
 
-部署和维护说明见 [DEPLOYMENT.md](./DEPLOYMENT.md) 和 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)。
+首次拉取前请把 GHCR 包设为公开（仓库 Packages → teachingroom-manager-public → Package settings → Change visibility → Public），或先执行 `docker login ghcr.io`。
+
+```bash
+git clone https://github.com/RealKiro/teachingroom-manager-public.git
+cd teachingroom-manager-public/docker
+echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
+docker compose pull
+docker compose up -d
+curl http://127.0.0.1:3000/api/health
+```
+
+`SESSION_SECRET` 未设置时系统会自动生成并持久化到 `data/session-secret.txt`。也可以完全本地构建：`docker compose up -d --build`。
+
+### 群晖 NAS（Container Manager）
+
+要求 DSM 7.2+（自带 Container Manager）：
+
+1. 套件中心安装 Container Manager；通过 File Station 把仓库上传到 `/docker/teachingroom`（或在 SSH 中 `git clone`）。
+2. 先让镜像可用：把 GHCR 包设为公开，然后在 SSH 中执行一次 `sudo docker compose -f /volume1/docker/teachingroom/docker/docker-compose.yml pull`；或者不拉取、直接在下一步让 Container Manager 本地构建。
+3. Container Manager → 项目 → 新增：路径选择 `/docker/teachingroom/docker`，来源选"使用现有的 docker-compose.yml"，一路下一步并启动。
+4. 运行数据保存在仓库目录下的 `data/`、`backups/`、`uploads/`、`exports/`，可直接纳入 Hyper Backup 计划。
+
+纯 SSH 方式：
+
+```bash
+ssh <USER>@<NAS_IP>
+cd /volume1/docker/teachingroom/docker
+echo "SESSION_SECRET=$(openssl rand -hex 48)" | sudo tee .env >/dev/null
+sudo docker compose pull
+sudo docker compose up -d
+sudo docker compose logs -f
+```
+
+### 方式二：Cloudflare Containers（实验性）
+
+预构建镜像可以直接跑在 Cloudflare Containers 上（需要 Workers 付费计划，Containers 目前为 Beta），最小示例见 `deploy/cloudflare/`：
+
+```bash
+npm install -g wrangler
+wrangler login
+cd deploy/cloudflare
+wrangler deploy
+```
+
+注意事项：
+
+- **容器磁盘不持久**：重启或迁移后 SQLite 数据与上传的照片会丢失，仅适合演示与试用；正式数据请部署在 NAS/服务器上，依赖每日备份机制。
+- 镜像必须可公开拉取（GHCR 公开包或 Docker Hub 公开仓库）。
+- 配置字段以 [Cloudflare Containers 官方文档](https://developers.cloudflare.com/containers/) 为准。
+
+### 方式三：Node.js 直接运行
+
+见 [DEPLOYMENT.md](./DEPLOYMENT.md)，含 systemd 服务模板 `deploy/teachingroom.service`。
+
+## MCP 接入（AstrBot 等机器人框架）
+
+服务内置标准 MCP（Model Context Protocol）服务端，端点 `/mcp`，使用 Streamable HTTP 传输，符合 MCP 官方规范，任何支持 MCP 的客户端均可接入，已重点适配 AstrBot（远程 MCP 模式）。
+
+- **鉴权**：与只读基础数据 API 共用同一令牌，读取 `data/base-data-api-token.txt`，通过 `X-API-Token` 或 `Authorization: Bearer` 头传递。
+- **能力**：只读工具集；数据写入请继续使用 Web 界面审核流程。
+
+| 工具 | 说明 |
+| --- | --- |
+| `list_classrooms` | 按楼栋、级部、更新计划、关键字筛选教室台账，支持 limit/offset 分页 |
+| `get_classroom` | 按教室 ID 或教室编号查询单间教室详情 |
+| `get_fields` | 获取公开字段定义（类型、可选项），便于构造筛选 |
+| `get_summary` | 台账统计概览（总数、楼栋/级部分布、更新计划统计） |
+
+### AstrBot 配置示例
+
+在 AstrBot WebUI（工具 → MCP）添加 MCP 服务器，使用远程 Streamable HTTP 方式：
+
+```json
+{
+  "url": "http://<SERVER_IP>:3000/mcp",
+  "transport": "streamable_http",
+  "timeout": 30,
+  "headers": {
+    "X-API-Token": "<TOKEN>"
+  }
+}
+```
+
+`<TOKEN>` 为服务器上 `data/base-data-api-token.txt` 的内容。保存后 AstrBot 会自动完成 MCP 握手并列出工具，机器人对话中即可直接查询教室设备与更新计划。
+
+### 其他 MCP 客户端
+
+任意标准 MCP 客户端按 Streamable HTTP 连接 `http://<SERVER_IP>:3000/mcp` 并携带同样的鉴权头即可。公网部署时请通过反向代理启用 HTTPS，并按需限制访问来源。
 
 ## 开发
 

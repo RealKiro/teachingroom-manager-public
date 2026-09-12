@@ -1,0 +1,24 @@
+services:
+  teachingroom:
+    # 默认使用 GHCR 预构建镜像；docker compose pull 拉取，或 --build 本地构建
+    image: ghcr.io/realkiro/teachingroom-manager-public:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: teachingroom-manager
+    init: true
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - DB_PATH=/app/data/teachingroom.sqlite
+      - AUTO_BACKUP_KEEP=200
+    volumes:
+      - ../data:/app/data
+      - ../backups:/app/backups
+      - ../uploads:/app/uploads
+      - ../exports:/app/exports
+      - ../初始化数据表格（虚拟）.xlsx:/app/初始化数据表格（虚拟）.xlsx:ro
+    restart: unless-stopped

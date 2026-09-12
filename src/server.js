@@ -22,6 +22,7 @@ import {
 } from "./database.js";
 import { buildExportWorkbook, importSourceExcelIfEmpty, parseUploadedWorkbook } from "./excel.js";
 import { applyTimelineRollback, buildTimelineRollbackPreview } from "./timeline-rollback.js";
+import { createMcpRouter } from "./mcp.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -602,6 +603,36 @@ app.get("/api/open/classrooms/:id", allowOpenCors, requireBaseDataToken, (req, r
   const publishedKeys = new Set(getPublicFields().map((field) => field.key));
   res.json({ data: toPublicClassroom(record, publishedKeys), updatedAt: latestClassroomUpdatedAt() });
 });
+
+// MCP（Model Context Protocol）服务端：/mcp，标准 Streamable HTTP，供 AstrBot 等机器人框架接入
+app.use("/mcp", createMcpRouter({
+  authenticate: requireBaseDataToken,
+  listClassrooms: (query) => {
+    const publishedKeys = new Set(getPublicFields().map((field) => field.key));
+    const { records, summary, filters } = getClassroomRecords(query, { searchableKeys: publishedKeys });
+    return {
+      data: records.map((record) => toPublicClassroom(record, publishedKeys)),
+      summary,
+      filters,
+      count: records.length,
+      updatedAt: latestClassroomUpdatedAt()
+    };
+  },
+  getClassroom: (identifier) => {
+    const key = String(identifier ?? "").trim();
+    if (!key) return null;
+    const { records } = getClassroomRecords({});
+    const record = records.find((item) => String(item.id) === key || item.values.room === key);
+    if (!record) return null;
+    return toPublicClassroom(record);
+  },
+  getFields: () => getPublicFields().map(toPublicField),
+  getSummary: (query) => {
+    const publishedKeys = new Set(getPublicFields().map((field) => field.key));
+    const { records, summary, filters } = getClassroomRecords(query, { searchableKeys: publishedKeys });
+    return { summary, filters, count: records.length, updatedAt: latestClassroomUpdatedAt() };
+  }
+}));
 
 app.post("/api/change-requests", requireLogin, (req, res) => {
   const { classroomId, changes, reason } = req.body || {};

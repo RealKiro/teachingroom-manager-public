@@ -120,42 +120,50 @@ systemctl is-active teachingroom.service
 
 ## Docker Compose
 
+Docker-related files live in the `docker/` directory (`Dockerfile`, `docker-compose.yml`). Run commands from within `docker/`:
+
 ```bash
 export SESSION_SECRET="$(openssl rand -hex 48)"
-docker compose up -d --build
+docker compose pull        # use the prebuilt GHCR image (recommended)
+docker compose up -d
 docker compose ps
 docker compose logs -f
 ```
 
-The Compose file persists runtime data through local directories:
+A fully local build also works: `docker compose up -d --build`.
 
-```text
-data/
-exports/
-```
+The Compose file persists runtime data in the repository root under `data/` and `exports/`.
 
-For production, set a strong `SESSION_SECRET` before starting.
+For production, set a strong `SESSION_SECRET` before starting; when omitted, the system generates and persists one into `data/session-secret.txt`.
 
 ### Prebuilt image
 
-The image is based on `node:24-alpine` (always tracking the latest Alpine release), built in multiple stages, runs as the non-root `node` user, and ships with an `/api/health` healthcheck. Pushes to the `main` branch and `v*` tags trigger GitHub Actions to build `linux/amd64` and `linux/arm64` images and publish them to GHCR; if the `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` repository secrets are configured, the same images are published to Docker Hub.
+The image is based on `node:24-alpine` (always tracking the latest Alpine release), built in multiple stages, runs as the non-root `node` user, and ships with an `/api/health` healthcheck. Pushes to the `main` branch and `v*` tags trigger GitHub Actions to build `linux/amd64` and `linux/arm64` images and publish them to GHCR:
 
-Without editing the Compose file you can also run the prebuilt image directly (mount the data directory at `/app/data`):
+```text
+ghcr.io/realkiro/teachingroom-manager-public:latest
+```
+
+If the `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` repository secrets are configured, the same images are also published to Docker Hub. The first GHCR push creates a private package; you can make it public in the repository's Packages settings.
+
+Without Compose you can also run the prebuilt image directly (mount the data directory at `/app/data`):
 
 ```bash
 docker run -d --name teachingroom-manager -p 3000:3000 \
   -e SESSION_SECRET="$(openssl rand -hex 48)" \
   -v "$PWD/data:/app/data" \
-  ghcr.io/<OWNER>/teachingroom-manager-public:latest
+  ghcr.io/realkiro/teachingroom-manager-public:latest
 ```
-
-The GHCR image path uses the lowercased repository path (`ghcr.io/<owner>/<repo>`). The first push creates a private package; you can make it public in the repository's Packages settings.
 
 ### CI/CD notes
 
 - `.github/workflows/ci.yml` runs `npm test` on Node.js 20/22/24.
 - `.github/workflows/docker.yml` builds the image, boots a container for an `/api/health` smoke test, and publishes only after it passes; pull requests build without publishing.
-- `.github/dependabot.yml` checks npm dependencies, the Dockerfile base image (`node:24-alpine`, Node major pinned), and Actions versions weekly.
+- `.github/dependabot.yml` checks npm dependencies, the Dockerfile base image (`docker/Dockerfile`, Node major pinned), and Actions versions weekly.
+
+## MCP Server
+
+The app exposes a standard MCP (Model Context Protocol) endpoint at `/mcp` over Streamable HTTP for bot frameworks such as AstrBot. Authentication shares the base-data API token (`X-API-Token` or `Authorization: Bearer` header), and the tool set is read-only (classroom inventory, classroom details, field definitions, statistics). See the MCP section in [README.en.md](./README.en.md) for an AstrBot configuration example.
 
 ## Data Files
 

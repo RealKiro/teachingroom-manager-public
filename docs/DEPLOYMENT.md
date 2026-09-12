@@ -167,10 +167,18 @@ sudo systemctl restart teachingroom.service
 
 ## 8. Docker Compose 部署
 
-启动：
+Docker 相关文件集中在仓库的 `docker/` 目录（`Dockerfile`、`docker-compose.yml`）。进入该目录操作：
 
 ```bash
+cd docker
 export SESSION_SECRET="$(openssl rand -hex 48)"
+docker compose pull        # 使用 GHCR 预构建镜像（推荐）
+docker compose up -d
+```
+
+也可以本地构建：
+
+```bash
 docker compose up -d --build
 ```
 

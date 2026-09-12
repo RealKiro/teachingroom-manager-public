@@ -54,8 +54,7 @@ teachingroom/
 ├── DEVELOPMENT.en.md
 ├── TIMESTAMP_LOG.md
 ├── TIMESTAMP_LOG.en.md
-├── Dockerfile
-├── docker-compose.yml
+├── docker/
 └── package.json
 ```
 

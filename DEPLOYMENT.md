@@ -120,42 +120,59 @@ systemctl is-active teachingroom.service
 
 ## Docker Compose 部署
 
+Docker 相关文件集中在 `docker/` 目录（`Dockerfile`、`docker-compose.yml`）。在 `docker/` 目录内执行：
+
 ```bash
 export SESSION_SECRET="$(openssl rand -hex 48)"
-docker compose up -d --build
+docker compose pull        # 使用 GHCR 预构建镜像（推荐）
+docker compose up -d
 docker compose ps
 docker compose logs -f
 ```
 
-Compose 文件会把运行数据保存在本地目录：
+也可以完全本地构建：
+
+```bash
+docker compose up -d --build
+```
+
+Compose 文件会把运行数据保存在仓库根目录：
 
 ```text
 data/
 exports/
 ```
 
-正式部署前请设置强随机 `SESSION_SECRET`。
+正式部署前请设置强随机 `SESSION_SECRET`；未设置时系统会自动生成并持久化到 `data/session-secret.txt`。
 
 ### 预构建镜像
 
-镜像基于 `node:24-alpine`（始终跟随 Alpine 最新版本），多阶段构建、以非 root 用户 `node` 运行，内置 `/api/health` 健康检查。推送到 main 分支或打 `v*` 标签时，GitHub Actions 自动构建 `linux/amd64` 和 `linux/arm64` 双架构镜像并发布到 GHCR；如已配置 `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` 仓库密钥，会同步发布到 Docker Hub。
+镜像基于 `node:24-alpine`（始终跟随 Alpine 最新版本），多阶段构建、以非 root 用户 `node` 运行，内置 `/api/health` 健康检查。推送到 main 分支或打 `v*` 标签时，GitHub Actions 自动构建 `linux/amd64` 和 `linux/arm64` 双架构镜像并发布到 GHCR：
 
-不修改 Compose 文件时，也可以直接运行预构建镜像（把数据目录挂载到 `/app/data` 等路径）：
+```text
+ghcr.io/realkiro/teachingroom-manager-public:latest
+```
+
+如已配置 `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` 仓库密钥，会同步发布到 Docker Hub。GHCR 包首次推送后默认私有，可在仓库 Packages 设置中改为公开。
+
+不使用 Compose 时，也可以直接运行预构建镜像（把数据目录挂载到 `/app/data` 等路径）：
 
 ```bash
 docker run -d --name teachingroom-manager -p 3000:3000 \
   -e SESSION_SECRET="$(openssl rand -hex 48)" \
   -v "$PWD/data:/app/data" \
-  ghcr.io/<OWNER>/teachingroom-manager-public:latest
+  ghcr.io/realkiro/teachingroom-manager-public:latest
 ```
-
-GHCR 镜像地址使用仓库路径的小写形式（`ghcr.io/<owner>/<repo>`）。首次推送后，包默认为私有，可在仓库 Packages 设置中改为公开。
 
 ### CI/CD 说明
 
 - `.github/workflows/ci.yml`：在 Node.js 20/22/24 三个版本上运行 `npm test`。
 - `.github/workflows/docker.yml`：先构建镜像并启动容器做 `/api/health` 冒烟测试，通过后发布镜像；Pull Request 只构建测试、不发布。
-- `.github/dependabot.yml`：每周检查 npm 依赖、Dockerfile 基础镜像（`node:24-alpine`，锁定 Node 大版本）和 Actions 版本更新。
+- `.github/dependabot.yml`：每周检查 npm 依赖、Dockerfile 基础镜像（`docker/Dockerfile`，锁定 Node 大版本）和 Actions 版本更新。
+
+## MCP 服务端
+
+服务在 `/mcp` 暴露标准 MCP（Model Context Protocol）端点，使用 Streamable HTTP 传输，供 AstrBot 等机器人框架接入。鉴权与开放 API 共用同一令牌（`X-API-Token` 或 `Authorization: Bearer` 头），工具集为只读查询（教室台账、教室详情、字段定义、统计概览）。AstrBot 配置示例见 [README.md](./README.md) 的 MCP 章节。
 
 ## 数据文件
 
