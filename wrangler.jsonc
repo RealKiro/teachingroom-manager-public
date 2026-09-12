@@ -19,6 +19,10 @@
   "vars": {
     "SKIP_SOURCE_IMPORT": "1"
   },
+  // 每日定时备份（19:00 UTC = 北京时间 03:00），调用 POST /api/cron/backup
+  "triggers": {
+    "crons": ["0 19 * * *"]
+  },
   "observability": {
     "enabled": true
   }

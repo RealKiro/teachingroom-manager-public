@@ -2,6 +2,10 @@
 
 [English](./README.en.md)
 
+<div align="center">
+  <img src="docs/banner.svg" alt="教室设备管理系统 —— 把教室设备 Excel 台账变成可审核、可备份的在线系统" width="960" />
+</div>
+
 教室设备管理系统是一个轻量级 Web 系统，用于把教室设备 Excel 台账转成可持续维护、可审核、可备份的数据管理工具。
 
 仓库附带 `初始化数据表格（虚拟）.xlsx`，用于演示首次初始化。该文件只包含虚构数据；系统支持教室台账、巡查更新、审核流程、Excel 导入导出、操作记录、数据回滚、数据库备份，以及面向其他部门的只读基础数据接口。
@@ -48,113 +52,105 @@
 
 推荐顺序：有服务器或 NAS 就用 Docker Compose；想免费上公网选 Workers 或 Vercel 两条无服务器路线（免费额度对小团队足够）；对数据可靠性要求更高时仍优先自有设备。各平台政策会变化，部署前以官方文档为准。
 
-### Docker Compose（推荐）
+### Docker Compose（推荐，服务器与群晖 NAS 通用）
 
-GitHub Actions 在每次推送 main 或打 `v*` 标签时自动测试、构建 `linux/amd64` + `linux/arm64` 镜像并发布到 GHCR：
+不需要懂开发：镜像由 GitHub Actions 在你自己的仓库里自动构建并发布，你只需要 Fork、点一次运行、然后启动容器。
 
-```text
-ghcr.io/realkiro/teachingroom-manager-public:latest
-```
+**第 1 步：Fork 仓库，构建你自己的镜像**
 
-**步骤 1：准备镜像。** 首次拉取前把 GHCR 包设为公开（仓库 Packages → teachingroom-manager-public → Package settings → Change visibility → Public），或先 `docker login ghcr.io`；也可以完全本地构建，跳过此步。
+1. 登录 GitHub，打开本仓库，点击右上角 **Fork**（创建到你自己的账号下）。
+2. 进入你 Fork 后的仓库，打开 **Actions** 标签页，首次会提示工作流被禁用，点击 **I understand my workflows, go ahead and enable them** 启用。
+3. 在 Actions 左侧选择 **Docker** 工作流 → 右侧 **Run workflow** → 确认运行，等待 5-10 分钟变绿 ✓。
+4. 回到仓库首页，右侧栏出现 **Packages**（或点个人头像 → Your packages），里面就有镜像 `teachingroom-manager-public`。点进去 → **Package settings** → **Danger Zone** → **Change visibility** → 改为 **Public**（公开后 NAS 和服务器无需登录即可拉取镜像）。
 
-**步骤 2：准备目录与密钥。**
+**第 2 步：把仓库文件放到机器上**
+
+- 群晖 NAS：在 GitHub 仓库页面点 **Code → Download ZIP**，解压后用 File Station 把整个文件夹上传到 NAS 的 `docker` 共享文件夹（例如 `/volume1/docker/teachingroom`）。注意是整个文件夹，不要只上传 `docker/` 子目录。
+- 服务器：SSH 登录后 `git clone https://github.com/<你的用户名>/teachingroom-manager-public.git`（或同样下载 ZIP 解压）。
+
+**第 3 步：写一个配置文件**
+
+在仓库的 `docker` 子目录里创建 `.env` 文件，内容两行：
 
 ```bash
-git clone https://github.com/RealKiro/teachingroom-manager-public.git
-cd teachingroom-manager-public/docker
+cd <仓库目录>/docker
 echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
+echo "TEACHINGROOM_IMAGE=ghcr.io/<你的用户名>/teachingroom-manager-public:latest" >> .env
 ```
 
-`SESSION_SECRET` 未设置时系统会自动生成并持久化到 `data/session-secret.txt`。
+把 `<你的用户名>` 换成你的 GitHub 用户名。`SESSION_SECRET` 是站点密钥，任意长随机字符串都可以（用密码生成器生成也行）。不需要改 `docker-compose.yml` 本身。
 
-**步骤 3：启动并验证。**
+**第 4 步：启动**
 
 ```bash
-docker compose pull            # 使用预构建镜像；本地构建改用 docker compose up -d --build
+docker compose pull
 docker compose up -d
 curl http://127.0.0.1:3000/api/health   # 返回 {"ok":true,...} 即成功
 ```
 
-镜像基于 `node:24-alpine` 多阶段构建，非 root 运行，内置健康检查。
+**群晖图形界面启动（全程不用 SSH）**：完成第 1-3 步后（`.env` 可在 File Station 里用文本编辑器创建），打开 Container Manager → **项目** → **新增** → 路径选择 `/docker/teachingroom/docker` → 来源选"使用现有的 docker-compose.yml" → 一路下一步并启动。
 
-### 群晖 NAS（Container Manager）
-
-要求 DSM 7.2+（自带 Container Manager）：
-
-1. 套件中心安装 Container Manager；通过 File Station 把仓库上传到 `/docker/teachingroom`（或在 SSH 中 `git clone`）。
-2. 先让镜像可用：把 GHCR 包设为公开，然后在 SSH 中执行一次 `sudo docker compose -f /volume1/docker/teachingroom/docker/docker-compose.yml pull`；或者跳过拉取，让 Container Manager 在下一步本地构建。
-3. Container Manager → 项目 → 新增：路径选择 `/docker/teachingroom/docker`，来源选"使用现有的 docker-compose.yml"，一路下一步并启动。
-4. 运行数据保存在仓库目录下的 `data/`、`backups/`、`uploads/`、`exports/`，可直接纳入 Hyper Backup 计划。
-
-纯 SSH 方式：
-
-```bash
-ssh <USER>@<NAS_IP>
-cd /volume1/docker/teachingroom/docker
-echo "SESSION_SECRET=$(openssl rand -hex 48)" | sudo tee .env >/dev/null
-sudo docker compose pull
-sudo docker compose up -d
-sudo docker compose logs -f
-```
+数据都保存在仓库目录下的 `data/`、`backups/`、`uploads/`、`exports/` 文件夹里，备份这些文件夹（或用 Hyper Backup）即可保全全部数据。日常更新版本：在 Fork 仓库页面点 **Sync fork → Update branch**，等 Actions 构建变绿后在 NAS/服务器上重新执行第 4 步即可。
 
 ### Cloudflare Workers（免费额度可跑，实验性）
 
-应用已适配 Workers：整个 Express 应用跑在单个 Durable Object 里，数据存入 DO 内置 SQLite（业务代码与本地/Docker 完全一致）。
+应用已适配 Workers：整个 Express 应用跑在单个 Durable Object 里，数据存入 DO 内置 SQLite（业务代码与本地/Docker 完全一致）。**全程在浏览器中完成，无需本地安装任何工具。**
 
-**步骤 1：安装工具并登录。**
+**第 1 步：Fork 仓库。** 与 Docker 部署共用同一个 Fork（见上文第 1 步；本方式无需运行 Docker 工作流）。
 
-```bash
-npm install
-npx wrangler login
-```
+**第 2 步：一键部署到 Cloudflare。** 点击下方按钮，用 GitHub 账号登录 Cloudflare，选择你 Fork 的仓库并确认创建：
 
-**步骤 2：准备环境变量。** 在 Cloudflare 控制台（Workers → 设置 → 变量）或 `wrangler.jsonc` 的 `vars` 中配置，必填项见下方无服务器环境变量表（`SESSION_SECRET` 必填；建议设置 `INITIAL_ADMIN_PASSWORD` 与 `CRON_SECRET`）。
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FRealKiro%2Fteachingroom-manager-public)
 
-**步骤 3：部署并验证。**
+按钮会自动读取仓库中的 `wrangler.jsonc`，创建 Durable Object 与静态资源，并建立"提交即部署"的关联。也可以手动操作：Cloudflare 控制台 → **Workers 和 Pages** → **创建** → **导入现有存储库** → 连接 GitHub → 选你的 Fork → 部署。
 
-```bash
-npx wrangler deploy
-curl https://<你的子域>.workers.dev/api/health
-```
+**第 3 步：配置环境变量。** 打开 Worker → **设置** → **变量和机密**，添加（值用密码生成器生成）：
 
-也可以在 Cloudflare 控制台连接 GitHub 仓库自动部署。首次部署后如未设置 `INITIAL_ADMIN_PASSWORD`，管理员密码会打印在部署日志中。
+- `SESSION_SECRET`（类型：机密，必填）
+- `INITIAL_ADMIN_PASSWORD`（建议：首次管理员密码，≥12 位）
+- `CRON_SECRET`（建议：定时备份令牌）
+
+**第 4 步：验证。** 打开 `https://<项目名>.<你的子域>.workers.dev/api/health`，返回 `{"ok":true,...}` 即成功；用 `admin` 和 `INITIAL_ADMIN_PASSWORD` 登录后立即改密。每日自动备份已由仓库内置的 Cron Trigger 完成（备份为 `.sql` 转储）。
 
 注意事项：
 
 - 免费版限制：10 万请求/天；DO SQLite 存储免费额度较小，照片请控制体积（单张上限 8MB）。
-- Workers 上备份为 SQL 转储格式（`.sql`），不再是 SQLite 二进制文件；定时备份需配置 `CRON_SECRET` 并在 Cloudflare 控制台添加 Cron Trigger（`POST /api/cron/backup`）。
 - 200MB 的整库上传恢复受 Worker 内存限制，建议用"启用服务器备份"功能恢复本系统导出的 `.sql` 备份。
 - 兼容性依赖 `nodejs_compat` + `enable_nodejs_http_server_modules`（2025-09 起官方支持 Node HTTP 服务器与 Express），该能力较新，正式使用前请在自己的账号上完整验证。
 
 ### Vercel（免费额度可跑，实验性）
 
-Vercel 上数据库使用 Turso（libSQL 免费远程 SQLite，SQLite 方言零改动）。
+Vercel 上数据库使用 Turso（libSQL 免费远程 SQLite，SQLite 方言零改动）。**同样全程网页操作：**
 
-**步骤 1：创建 Turso 数据库。**
+**第 1 步：Fork 仓库。** 同上。
+
+**第 2 步：一键部署到 Vercel。** 点击下方按钮，用 GitHub 账号登录 Vercel 并授权，按向导创建项目：
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FRealKiro%2Fteachingroom-manager-public&env=SESSION_SECRET,INITIAL_ADMIN_PASSWORD,CRON_SECRET&project-name=teachingroom-manager)
+
+向导会要求填写 `SESSION_SECRET`（必填，用密码生成器生成）、`INITIAL_ADMIN_PASSWORD` 与 `CRON_SECRET`（可留空稍后补）。
+
+**第 3 步：接入 Turso 数据库。** 部署完成后进入项目 → **Storage / 集成** 标签 → 添加 **Turso** 集成 → 创建或选择数据库，Vercel 会自动把 `LIBSQL_URL` 和 `LIBSQL_AUTH_TOKEN` 注入项目，无需手动复制粘贴。
+
+**第 4 步：验证。** 打开 `https://<项目名>.vercel.app/api/health`，返回 `{"ok":true,...}` 即成功。每日自动备份已由 `vercel.json` 内置（备份为 `.sql` 转储，存于数据库内）。
+
+<details>
+<summary>进阶：命令行部署方式（可选）</summary>
 
 ```bash
-npm install -g @turso/cli
+npm install -g @turso/cli vercel
 turso auth login
 turso db create teachingroom
 turso db show teachingroom --url          # → LIBSQL_URL
 turso db tokens create teachingroom       # → LIBSQL_AUTH_TOKEN
-```
-
-**步骤 2：部署到 Vercel 并配置环境变量。**
-
-```bash
-npm install -g vercel
 vercel link
 vercel env add LIBSQL_URL production
 vercel env add LIBSQL_AUTH_TOKEN production
-vercel env add SESSION_SECRET production   # 必填：openssl rand -hex 48
-vercel env add INITIAL_ADMIN_PASSWORD production
-vercel env add CRON_SECRET production      # 定时备份令牌，可选
+vercel env add SESSION_SECRET production   # openssl rand -hex 48
 vercel --prod
 ```
 
-也可以在 Vercel 控制台导入 GitHub 仓库后在 Environment Variables 中配置。Vercel Cron 会自动以 `vercel.json` 中的计划调用 `POST /api/cron/backup` 完成每日备份（备份为 `.sql` 转储，存于数据库内）。
+</details>
 
 注意事项：
 

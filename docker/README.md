@@ -26,13 +26,15 @@ docker compose ps
 docker compose logs -f
 ```
 
-建议在 `docker/` 目录下创建 `.env` 文件保存会话密钥（compose 会自动读取）：
+建议在 `docker/` 目录下创建 `.env` 文件保存配置（compose 会自动读取）：
 
 ```bash
 echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
+# Fork 用户：把镜像指向自己账号下的 GHCR 包
+echo "TEACHINGROOM_IMAGE=ghcr.io/<你的用户名>/teachingroom-manager-public:latest" >> .env
 ```
 
-未设置时系统会在首次启动时自动生成并持久化到 `data/session-secret.txt`。
+`SESSION_SECRET` 未设置时系统会在首次启动时自动生成并持久化到 `data/session-secret.txt`；`TEACHINGROOM_IMAGE` 未设置时默认拉取 `ghcr.io/realkiro/teachingroom-manager-public:latest`。
 
 数据目录位于仓库根目录的 `data/`、`backups/`、`uploads/`、`exports/`。
 

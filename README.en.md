@@ -2,6 +2,10 @@
 
 [中文](./README.md)
 
+<div align="center">
+  <img src="docs/banner.svg" alt="TeachingRoom Manager — turn classroom equipment spreadsheets into an auditable, backed-up online system" width="960" />
+</div>
+
 TeachingRoom Manager is a lightweight browser-based classroom equipment data system.
 
 The repository includes `初始化数据表格（虚拟）.xlsx` for first-run demonstrations. It contains synthetic data only; the application supports classroom inventory, inspection updates, review workflows, Excel import/export, audit logs, rollback, backups, and read-only base-data integration.
@@ -48,113 +52,105 @@ All application data (SQLite database, photos, backups) requires **persistent st
 
 Recommended order: use Docker Compose when you have a server or NAS; pick the Workers or Vercel serverless paths for a free public deployment (the free tiers are enough for small teams); prefer own hardware when durability matters most. Platform policies change; always verify against official docs before deploying.
 
-### Docker Compose (recommended)
+### Docker Compose (recommended, works for both servers and Synology NAS)
 
-GitHub Actions automatically tests, builds `linux/amd64` + `linux/arm64` images and publishes them to GHCR on every push to main and every `v*` tag:
+No development skills required: GitHub Actions builds the image automatically inside your own repository. You only need to fork, click run once, and start the container.
 
-```text
-ghcr.io/realkiro/teachingroom-manager-public:latest
-```
+**Step 1: fork the repository and build your own image**
 
-**Step 1: prepare the image.** Before the first pull, make the GHCR package public (repository Packages → teachingroom-manager-public → Package settings → Change visibility → Public), or run `docker login ghcr.io` first; a fully local build also works and skips this step.
+1. Sign in to GitHub, open this repository, and click **Fork** (top right) to copy it to your account.
+2. Open the **Actions** tab of your fork; workflows are disabled on first visit — click **I understand my workflows, go ahead and enable them**.
+3. Pick the **Docker** workflow on the left → **Run workflow** → confirm. Wait 5-10 minutes until it turns green ✓.
+4. Back on the repository home page, the **Packages** sidebar (or your avatar → Your packages) now contains the image `teachingroom-manager-public`. Open it → **Package settings** → **Danger Zone** → **Change visibility** → set to **Public** (so the NAS and server can pull without logging in).
 
-**Step 2: prepare the directory and secret.**
+**Step 2: get the repository files onto the machine**
+
+- Synology NAS: click **Code → Download ZIP** on GitHub, extract it, and use File Station to upload the whole folder to the NAS `docker` share (e.g. `/volume1/docker/teachingroom`). Upload the entire folder, not just the `docker/` subfolder.
+- Server: log in over SSH and run `git clone https://github.com/<your-username>/teachingroom-manager-public.git` (or download and extract the ZIP the same way).
+
+**Step 3: create one configuration file**
+
+Create a `.env` file inside the repository's `docker` folder with two lines:
 
 ```bash
-git clone https://github.com/RealKiro/teachingroom-manager-public.git
-cd teachingroom-manager-public/docker
+cd <repository>/docker
 echo "SESSION_SECRET=$(openssl rand -hex 48)" > .env
+echo "TEACHINGROOM_IMAGE=ghcr.io/<your-username>/teachingroom-manager-public:latest" >> .env
 ```
 
-If `SESSION_SECRET` is not set, the system generates and persists one into `data/session-secret.txt`.
+Replace `<your-username>` with your GitHub username. `SESSION_SECRET` is the site secret — any long random string works (a password generator is fine). You do not need to edit `docker-compose.yml` itself.
 
-**Step 3: start and verify.**
+**Step 4: start**
 
 ```bash
-docker compose pull            # prebuilt image; for a local build use docker compose up -d --build
+docker compose pull
 docker compose up -d
 curl http://127.0.0.1:3000/api/health   # {"ok":true,...} means success
 ```
 
-The image is a multi-stage build on `node:24-alpine`, runs as non-root, and ships with a healthcheck.
+**Synology GUI start (no SSH needed)**: after steps 1-3 (the `.env` can be created in File Station with a text editor), open Container Manager → **Project** → **Create** → set the path to `/docker/teachingroom/docker` → choose "Use an existing docker-compose.yml" → step through and start.
 
-### Synology NAS (Container Manager)
-
-Requires DSM 7.2+ (ships with Container Manager):
-
-1. Install Container Manager from Package Center; upload the repository to `/docker/teachingroom` via File Station (or `git clone` over SSH).
-2. Make the image available: set the GHCR package to public, then run `sudo docker compose -f /volume1/docker/teachingroom/docker/docker-compose.yml pull` once over SSH; or skip the pull and let Container Manager build locally in the next step.
-3. Container Manager → Project → Create: set the path to `/docker/teachingroom/docker`, choose "Use an existing docker-compose.yml", and start the project.
-4. Runtime data lives in `data/`, `backups/`, `uploads/`, and `exports/` under the repository folder and can be included in Hyper Backup plans.
-
-SSH-only alternative:
-
-```bash
-ssh <USER>@<NAS_IP>
-cd /volume1/docker/teachingroom/docker
-echo "SESSION_SECRET=$(openssl rand -hex 48)" | sudo tee .env >/dev/null
-sudo docker compose pull
-sudo docker compose up -d
-sudo docker compose logs -f
-```
+All data lives in the `data/`, `backups/`, `uploads/`, and `exports/` folders under the repository directory — back those up (or use Hyper Backup) to preserve everything. To update later: on your fork click **Sync fork → Update branch**, wait for the Actions build to turn green, then repeat step 4 on the NAS/server.
 
 ### Cloudflare Workers (free-tier friendly, experimental)
 
-The app is adapted for Workers: the whole Express app runs inside a single Durable Object with data stored in the DO's built-in SQLite (business code identical to local/Docker runs).
+The app is adapted for Workers: the whole Express app runs inside a single Durable Object with data stored in the DO's built-in SQLite (business code identical to local/Docker runs). **Everything happens in the browser — no local tooling required.**
 
-**Step 1: install the tooling and log in.**
+**Step 1: fork the repository.** The same fork used for Docker deployment (see step 1 above; you do not need to run the Docker workflow).
 
-```bash
-npm install
-npx wrangler login
-```
+**Step 2: one-click deploy to Cloudflare.** Click the button below, sign in to Cloudflare with your GitHub account, and pick your fork:
 
-**Step 2: prepare environment variables.** Configure them in the Cloudflare dashboard (Workers → Settings → Variables) or in the `vars` block of `wrangler.jsonc`; required variables are listed in the serverless env table below (`SESSION_SECRET` is required; `INITIAL_ADMIN_PASSWORD` and `CRON_SECRET` are recommended).
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FRealKiro%2Fteachingroom-manager-public)
 
-**Step 3: deploy and verify.**
+The button reads `wrangler.jsonc` from the repository, provisions the Durable Object and static assets, and wires up deploy-on-push. You can also do it manually: Cloudflare dashboard → **Workers & Pages** → **Create** → **Import an existing repository** → connect GitHub → pick your fork → deploy.
 
-```bash
-npx wrangler deploy
-curl https://<your-subdomain>.workers.dev/api/health
-```
+**Step 3: configure environment variables.** Open the Worker → **Settings** → **Variables and Secrets**, and add (values from a password generator):
 
-You can also connect the GitHub repository in the Cloudflare dashboard for automatic deploys. After the first deployment, if `INITIAL_ADMIN_PASSWORD` was not set, the admin password is printed to the deployment logs.
+- `SESSION_SECRET` (type: Secret, required)
+- `INITIAL_ADMIN_PASSWORD` (recommended: first admin password, ≥12 chars)
+- `CRON_SECRET` (recommended: token for scheduled backups)
+
+**Step 4: verify.** Open `https://<project>.<your-subdomain>.workers.dev/api/health`; `{"ok":true,...}` means success. Sign in as `admin` with `INITIAL_ADMIN_PASSWORD` and change the password right away. The daily backup runs automatically via the Cron Trigger built into the repository (backups are `.sql` dumps).
 
 Notes:
 
 - Free plan limits: 100k requests/day; DO SQLite storage allowance is small, so keep photo sizes small (8MB per photo max).
-- Backups on Workers are SQL dumps (`.sql`), no longer SQLite binaries; scheduled backups require `CRON_SECRET` plus a Cron Trigger added in the dashboard (`POST /api/cron/backup`).
 - Restoring a 200MB uploaded database file is limited by Worker memory; prefer the "enable server backup" flow with a `.sql` dump exported by this system.
 - Compatibility relies on `nodejs_compat` + `enable_nodejs_http_server_modules` (official Node HTTP server / Express support since 2025-09). The capability is new — verify fully on your own account before production use.
 
 ### Vercel (free-tier friendly, experimental)
 
-On Vercel the database is Turso (free remote libSQL; SQLite dialect unchanged).
+On Vercel the database is Turso (free remote libSQL; SQLite dialect unchanged). **Browser-only as well:**
 
-**Step 1: create the Turso database.**
+**Step 1: fork the repository.** Same as above.
+
+**Step 2: one-click deploy to Vercel.** Click the button below, sign in to Vercel with your GitHub account, and follow the wizard:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FRealKiro%2Fteachingroom-manager-public&env=SESSION_SECRET,INITIAL_ADMIN_PASSWORD,CRON_SECRET&project-name=teachingroom-manager)
+
+The wizard asks for `SESSION_SECRET` (required, from a password generator), `INITIAL_ADMIN_PASSWORD`, and `CRON_SECRET` (can be left empty for now).
+
+**Step 3: attach the Turso database.** After deployment, open the project → **Storage / Integrations** tab → add the **Turso** integration → create or select a database. Vercel injects `LIBSQL_URL` and `LIBSQL_AUTH_TOKEN` automatically — no copy-pasting needed.
+
+**Step 4: verify.** Open `https://<project>.vercel.app/api/health`; `{"ok":true,...}` means success. The daily backup is built into `vercel.json` (backups are `.sql` dumps stored inside the database).
+
+<details>
+<summary>Advanced: command-line deployment (optional)</summary>
 
 ```bash
-npm install -g @turso/cli
+npm install -g @turso/cli vercel
 turso auth login
 turso db create teachingroom
 turso db show teachingroom --url          # → LIBSQL_URL
 turso db tokens create teachingroom       # → LIBSQL_AUTH_TOKEN
-```
-
-**Step 2: deploy to Vercel and configure environment variables.**
-
-```bash
-npm install -g vercel
 vercel link
 vercel env add LIBSQL_URL production
 vercel env add LIBSQL_AUTH_TOKEN production
-vercel env add SESSION_SECRET production   # required: openssl rand -hex 48
-vercel env add INITIAL_ADMIN_PASSWORD production
-vercel env add CRON_SECRET production      # optional token for scheduled backups
+vercel env add SESSION_SECRET production   # openssl rand -hex 48
 vercel --prod
 ```
 
-Alternatively import the GitHub repository in the Vercel dashboard and configure Environment Variables there. The Vercel Cron defined in `vercel.json` calls `POST /api/cron/backup` daily (backups are `.sql` dumps stored inside the database).
+</details>
 
 Notes:
 

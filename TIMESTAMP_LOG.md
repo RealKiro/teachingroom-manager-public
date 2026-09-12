@@ -15,6 +15,13 @@
 
 ## 记录
 
+### 2026-09-12 21:30:00 CST
+
+- 事件：公开脱敏版新增 README 首页 SVG 预览横幅，并把 Docker 与无服务器部署说明改为面向非开发者的"一键/少操作"流程。
+- 分支：`main`
+- 备注：新增自绘 `docs/banner.svg`（系统界面预览 + 部署平台徽标，中英 README 顶部引用）；Docker Compose 与群晖 NAS 合并为一节，流程改为"Fork → 启用 Actions 构建 → 修改 .env → 启动"，compose 镜像名支持 `TEACHINGROOM_IMAGE` 环境变量覆盖；Cloudflare Workers / Vercel 章节加入一键部署按钮（deploy.workers.cloudflare.com / vercel.com/new）与控制台步骤，`wrangler.jsonc` 内置每日 Cron Trigger。不包含学校部署信息或运行数据。
+- 验证：SVG 通过 XML 良构校验；`wrangler.jsonc` 解析通过；本次仅文档与部署配置改动，不影响测试结果。
+
 ### 2026-09-12 20:30:00 CST
 
 - 事件：公开脱敏版新增无服务器部署支持（Cloudflare Workers / Vercel）。

@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-label="教室设备管理系统 TeachingRoom Manager 预览">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1120"/>
+      <stop offset="1" stop-color="#152238"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="cardHead" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2a47"/>
+      <stop offset="1" stop-color="#14203a"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#3b82f6" stroke-opacity="0.08"/>
+    </pattern>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="600" rx="26" fill="url(#bg)"/>
+  <rect width="1200" height="600" rx="26" fill="url(#grid)"/>
+  <rect x="1.5" y="1.5" width="1197" height="597" rx="24.5" fill="none" stroke="#2c3d5e" stroke-opacity="0.9"/>
+  <rect x="64" y="566" width="240" height="3" rx="1.5" fill="url(#accent)"/>
+
+  <!-- 左栏：标题与特性 -->
+  <rect x="64" y="66" width="252" height="40" rx="20" fill="#38bdf8" fill-opacity="0.10" stroke="#38bdf8" stroke-opacity="0.45"/>
+  <text x="190" y="92" text-anchor="middle" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="16" fill="#7dd3fc" letter-spacing="1">TeachingRoom Manager</text>
+
+  <text x="64" y="182" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="50" font-weight="700" fill="#f1f5f9">教室设备管理系统</text>
+
+  <text x="64" y="228" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="19" fill="#94a3b8">把教室设备 Excel 台账，变成可审核、可回滚、</text>
+  <text x="64" y="258" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="19" fill="#94a3b8">可备份的在线管理系统 —— 为校内小团队而生</text>
+
+  <g font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="16" fill="#e2e8f0">
+    <rect x="64" y="292" width="240" height="44" rx="12" fill="#16213a" stroke="#334155"/>
+    <circle cx="88" cy="314" r="5" fill="#38bdf8"/>
+    <text x="106" y="320">交叉审核工作流</text>
+
+    <rect x="320" y="292" width="240" height="44" rx="12" fill="#16213a" stroke="#334155"/>
+    <circle cx="344" cy="314" r="5" fill="#34d399"/>
+    <text x="362" y="320">配置历史与一键回滚</text>
+
+    <rect x="64" y="348" width="240" height="44" rx="12" fill="#16213a" stroke="#334155"/>
+    <circle cx="88" cy="370" r="5" fill="#fbbf24"/>
+    <text x="106" y="376">每日自动备份</text>
+
+    <rect x="320" y="348" width="240" height="44" rx="12" fill="#16213a" stroke="#334155"/>
+    <circle cx="344" cy="370" r="5" fill="#f472b6"/>
+    <text x="362" y="376">MCP 机器人接入</text>
+  </g>
+
+  <text x="64" y="446" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="15" fill="#64748b">一套代码，多种部署</text>
+  <g font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="15" fill="#cbd5e1">
+    <rect x="64" y="462" width="96" height="38" rx="19" fill="none" stroke="#475569"/>
+    <text x="112" y="486" text-anchor="middle">Docker</text>
+    <rect x="172" y="462" width="110" height="38" rx="19" fill="none" stroke="#475569"/>
+    <text x="227" y="486" text-anchor="middle">群晖 NAS</text>
+    <rect x="294" y="462" width="160" height="38" rx="19" fill="#f6821f" fill-opacity="0.12" stroke="#f6821f" stroke-opacity="0.55"/>
+    <text x="374" y="486" text-anchor="middle" fill="#fdba74">Cloudflare Workers</text>
+    <rect x="466" y="462" width="94" height="38" rx="19" fill="#0070f3" fill-opacity="0.12" stroke="#0070f3" stroke-opacity="0.6"/>
+    <text x="513" y="486" text-anchor="middle" fill="#93c5fd">Vercel</text>
+  </g>
+
+  <text x="64" y="548" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="14" fill="#475569">Node.js · Express · SQLite · GitHub Actions CI/CD · GHCR 镜像</text>
+
+  <!-- 右栏：界面预览卡片 -->
+  <g filter="url(#cardShadow)">
+    <rect x="612" y="66" width="524" height="468" rx="18" fill="#0d1526" stroke="#27364f"/>
+  </g>
+  <circle cx="644" cy="98" r="6" fill="#f87171"/>
+  <circle cx="664" cy="98" r="6" fill="#fbbf24"/>
+  <circle cx="684" cy="98" r="6" fill="#34d399"/>
+  <text x="712" y="103" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="15" fill="#cbd5e1">教室设备台账</text>
+  <rect x="1000" y="84" width="112" height="28" rx="14" fill="#16213a" stroke="#334155"/>
+  <text x="1016" y="103" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="12.5" fill="#64748b">搜索教室…</text>
+
+  <g font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="13" fill="#94a3b8">
+    <rect x="636" y="126" width="62" height="26" rx="13" fill="#38bdf8" fill-opacity="0.14" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="667" y="143" text-anchor="middle" fill="#7dd3fc">全部 42</text>
+    <rect x="706" y="126" width="52" height="26" rx="13" fill="none" stroke="#334155"/>
+    <text x="732" y="143" text-anchor="middle">X栋</text>
+    <rect x="766" y="126" width="52" height="26" rx="13" fill="none" stroke="#334155"/>
+    <text x="792" y="143" text-anchor="middle">小学</text>
+    <rect x="826" y="126" width="76" height="26" rx="13" fill="none" stroke="#334155"/>
+    <text x="864" y="143" text-anchor="middle">计划屏幕</text>
+  </g>
+
+  <rect x="636" y="168" width="476" height="34" rx="8" fill="#16213a"/>
+  <g font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="13" fill="#7c8db0">
+    <text x="652" y="190">教室</text>
+    <text x="722" y="190">班级</text>
+    <text x="846" y="190">现有屏幕</text>
+    <text x="966" y="190">暑期计划</text>
+    <text x="1064" y="190">状态</text>
+  </g>
+
+  <g font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="14">
+    <rect x="636" y="210" width="476" height="54" rx="10" fill="#101a30"/>
+    <text x="652" y="243" fill="#f1f5f9" font-weight="600">X101</text>
+    <text x="722" y="243" fill="#cbd5e1">一年级(1)班</text>
+    <text x="846" y="243" fill="#cbd5e1">智慧黑板</text>
+    <text x="966" y="243" fill="#67e8f9" font-size="12.5">✓屏幕 ✓书写板</text>
+    <rect x="1054" y="222" width="56" height="24" rx="12" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-opacity="0.5"/>
+    <text x="1082" y="238" text-anchor="middle" fill="#6ee7b7" font-size="12">已上线</text>
+
+    <rect x="636" y="274" width="476" height="54" rx="10" fill="none"/>
+    <text x="652" y="307" fill="#f1f5f9" font-weight="600">X102</text>
+    <text x="722" y="307" fill="#cbd5e1">一年级(2)班</text>
+    <text x="846" y="307" fill="#cbd5e1">触控一体机</text>
+    <text x="966" y="307" fill="#67e8f9" font-size="12.5">✓扩声</text>
+    <rect x="1054" y="286" width="56" height="24" rx="12" fill="#fbbf24" fill-opacity="0.12" stroke="#fbbf24" stroke-opacity="0.5"/>
+    <text x="1082" y="302" text-anchor="middle" fill="#fcd34d" font-size="12">待审核</text>
+
+    <rect x="636" y="338" width="476" height="54" rx="10" fill="#101a30"/>
+    <text x="652" y="371" fill="#f1f5f9" font-weight="600">X201</text>
+    <text x="722" y="371" fill="#cbd5e1">二年级(1)班</text>
+    <text x="846" y="371" fill="#cbd5e1">投影仪</text>
+    <text x="966" y="371" fill="#67e8f9" font-size="12.5">✓录播</text>
+    <rect x="1054" y="350" width="56" height="24" rx="12" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-opacity="0.5"/>
+    <text x="1082" y="366" text-anchor="middle" fill="#6ee7b7" font-size="12">已上线</text>
+
+    <rect x="636" y="402" width="476" height="54" rx="10" fill="none"/>
+    <text x="652" y="435" fill="#f1f5f9" font-weight="600">W301</text>
+    <text x="722" y="435" fill="#cbd5e1">高三(5)班</text>
+    <text x="846" y="435" fill="#cbd5e1">智慧黑板</text>
+    <text x="966" y="435" fill="#67e8f9" font-size="12.5">✓屏幕 ✓录播</text>
+    <rect x="1054" y="414" width="56" height="24" rx="12" fill="#38bdf8" fill-opacity="0.12" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="1082" y="430" text-anchor="middle" fill="#7dd3fc" font-size="12">审核中</text>
+  </g>
+
+  <rect x="636" y="478" width="476" height="1.5" fill="#1d2a45"/>
+  <text x="636" y="510" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="13" fill="#64748b">共 42 间教室 · 今日自动备份 ✓ · 弱网提交自动补交 ✓</text>
+  <text x="1112" y="510" text-anchor="end" font-family="-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="13" fill="#38bdf8">导出 Excel</text>
+</svg>

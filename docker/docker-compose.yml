@@ -1,7 +1,8 @@
 services:
   teachingroom:
-    # 默认使用 GHCR 预构建镜像；docker compose pull 拉取，或 --build 本地构建
-    image: ghcr.io/realkiro/teachingroom-manager-public:latest
+    # 默认拉取仓库自带的 GHCR 镜像；Fork 用户在 .env 中配置
+    # TEACHINGROOM_IMAGE=ghcr.io/<你的用户名>/teachingroom-manager-public:latest 即可换成自己的镜像
+    image: ${TEACHINGROOM_IMAGE:-ghcr.io/realkiro/teachingroom-manager-public:latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile
