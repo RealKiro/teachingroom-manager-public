@@ -9,6 +9,7 @@ Chinese is the default documentation language. English versions use matching `.e
 - [Project overview](../README.en.md)
 - [Concise deployment guide](../DEPLOYMENT.en.md)
 - [Complete deployment and operations manual](./DEPLOYMENT.en.md)
+- [Docker files guide](../docker/README.md)
 
 ## Development And Maintenance
 
