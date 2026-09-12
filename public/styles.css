@@ -1602,3 +1602,74 @@ dialog footer {
     font-size: 13px;
   }
 }
+
+/* 备件库存 / 设备登记弹窗 */
+.categoryPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.assetToolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.assetToolbar input[type="search"] {
+  flex: 1;
+}
+.assetRows {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.assetRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.assetRow:last-child {
+  border-bottom: none;
+}
+.assetMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.assetMain strong {
+  font-size: 14px;
+}
+.assetMain span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.assetSide {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.assetSide button {
+  font-size: 12.5px;
+}
+.dangerText {
+  color: var(--danger);
+}
+.assetEmpty {
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.assetFormActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  grid-column: 1 / -1;
+}

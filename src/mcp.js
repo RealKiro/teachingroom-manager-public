@@ -10,7 +10,7 @@ const supportedProtocolVersions = new Set(["2025-06-18", "2025-03-26", "2024-11-
 
 const serverInfo = {
   name: "teachingroom-manager",
-  title: "教室设备管理系统",
+  title: "校园设备资产管理系统",
   version: "0.1.0"
 };
 
@@ -126,7 +126,7 @@ export function createMcpRouter({ authenticate, listClassrooms, getClassroom, ge
           capabilities: { tools: { listChanged: false } },
           serverInfo,
           instructions:
-            "教室设备管理系统的只读查询工具。可查询教室设备台账、更新计划与统计信息；数据写入请使用 Web 界面。"
+            "校园设备资产管理系统的只读查询工具。可查询教室设备台账、更新计划与统计信息；数据写入请使用 Web 界面。"
         };
       case "ping":
         return {};

@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>教室设备管理</title>
+    <title>校园设备资产管理系统</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <section id="loginView" class="loginView">
       <form id="loginForm" class="loginPanel">
-        <p class="eyebrow">TeachingRoom Control</p>
-        <h1>教室设备管理</h1>
+        <p class="eyebrow">Campus Asset Management</p>
+        <h1>校园设备资产管理系统</h1>
         <label>
           <span>账号</span>
           <input id="usernameInput" autocomplete="username" required />
@@ -28,8 +28,8 @@
       <header class="topbar">
         <div class="topbarInner">
           <div>
-            <p class="eyebrow">Classroom Equipment</p>
-            <h1>教室设备管理</h1>
+            <p class="eyebrow">Campus Equipment</p>
+            <h1>校园设备资产管理系统</h1>
           </div>
           <div class="status">
             <span id="networkStatus" class="networkStatus" role="status" aria-live="polite">正在连接</span>
@@ -38,6 +38,9 @@
             <button id="passwordButton" type="button">修改密码</button>
             <button id="auditButton" type="button">操作记录</button>
             <button id="backupButton" type="button">数据库备份</button>
+            <button id="inventoryButton" type="button" hidden>备件库存</button>
+            <button id="equipmentButton" type="button" hidden>设备登记</button>
+            <button id="labelsButton" type="button" hidden>标签打印</button>
             <button id="userButton" type="button">用户管理</button>
             <button id="logoutButton" type="button">退出</button>
           </div>
@@ -48,8 +51,14 @@
         <section class="toolbar" aria-label="筛选和操作">
           <div class="searchbox">
             <span aria-hidden="true">⌕</span>
-            <input id="searchInput" type="search" placeholder="搜索门牌、班级、设备、录播、监控" />
+            <input id="searchInput" type="search" placeholder="搜索名称、编号、班级、设备" />
           </div>
+          <select id="categoryFilter" aria-label="台账类别">
+            <option value="">全部台账</option>
+            <option value="classroom">班级教室</option>
+            <option value="teacher">教师</option>
+            <option value="office">办公室</option>
+          </select>
           <select id="buildingFilter" aria-label="楼栋"></select>
           <select id="departmentFilter" aria-label="级部"></select>
           <select id="plannedFilter" aria-label="更新项目">
@@ -67,7 +76,7 @@
           </select>
           <button id="exportButton" class="primary" type="button">导出 Excel</button>
           <button id="uploadButton" type="button">上传 Excel</button>
-          <button id="addClassroomButton" type="button">新增教室</button>
+          <button id="addClassroomButton" type="button">新增台账</button>
           <input id="uploadInput" type="file" accept=".xlsx,.xls" hidden />
         </section>
 
@@ -201,11 +210,18 @@
       <form id="createClassroomForm" method="dialog">
         <header>
           <div>
-            <h2>新增教室记录</h2>
+            <h2>新增台账记录</h2>
             <p class="muted">管理员可新增底层教室数据</p>
           </div>
           <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
         </header>
+        <label class="categoryPicker"><span>台账类别 *</span>
+          <select id="createCategorySelect">
+            <option value="classroom">班级教室</option>
+            <option value="teacher">教师</option>
+            <option value="office">办公室</option>
+          </select>
+        </label>
         <div id="createClassroomFields" class="formGrid"></div>
         <footer>
           <button value="cancel" type="submit" formnovalidate>取消</button>
@@ -319,8 +335,8 @@
           </div>
           <select id="auditActionFilter" aria-label="操作类型">
             <option value="">全部操作</option>
-            <option value="create_classroom">新增教室</option>
-            <option value="submit_create_classroom">提交新增教室</option>
+            <option value="create_classroom">新增教室台账</option>
+            <option value="submit_create_classroom">提交新增台账</option>
             <option value="submit_change_request">提交变更</option>
             <option value="review_approved">审核通过</option>
             <option value="review_rejected">审核拒绝</option>
@@ -381,6 +397,105 @@
         </div>
         <p id="backupPolicy" class="muted"></p>
         <div class="backupList" id="backupList"></div>
+      </form>
+    </dialog>
+
+    <dialog id="inventoryDialog">
+      <form id="inventoryForm" method="dialog">
+        <header>
+          <div>
+            <h2>备件库存</h2>
+            <p class="muted">备件出入库与状态管理（管理员）</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div class="assetToolbar">
+          <input id="inventorySearch" type="search" placeholder="搜索名称、型号、存放位置" />
+          <select id="inventoryStatusFilter">
+            <option value="">全部状态</option>
+            <option>全新</option>
+            <option>旧有</option>
+            <option>损坏</option>
+            <option>待修</option>
+          </select>
+        </div>
+        <div id="inventoryRows" class="assetRows"></div>
+        <div class="assetForm formGrid">
+          <input id="inventoryName" placeholder="设备名称 *" required />
+          <input id="inventoryModel" placeholder="型号" />
+          <input id="inventoryLocation" placeholder="存放位置" />
+          <input id="inventoryStatus" placeholder="状态（全新/旧有/损坏/待修）" list="inventoryStatusList" />
+          <input id="inventoryQuantity" type="number" min="1" value="1" placeholder="数量" />
+          <input id="inventoryNote" placeholder="备注" />
+          <datalist id="inventoryStatusList">
+            <option>全新</option><option>旧有</option><option>损坏</option><option>待修</option>
+          </datalist>
+          <div class="assetFormActions">
+            <button type="button" id="inventoryResetButton">清空表单</button>
+            <button type="button" id="inventorySaveButton" class="primary">入库 / 保存</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="equipmentDialog">
+      <form id="equipmentForm" method="dialog">
+        <header>
+          <div>
+            <h2>设备登记</h2>
+            <p class="muted">登记设备、记录使用人与使用地点、支持转移（管理员）</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div class="assetToolbar">
+          <input id="equipmentSearch" type="search" placeholder="搜索名称、型号、使用人、资产编码" />
+          <select id="equipmentStatusFilter">
+            <option value="">全部状态</option>
+            <option>在用</option>
+            <option>闲置</option>
+            <option>维修</option>
+            <option>报废</option>
+          </select>
+        </div>
+        <div id="equipmentRows" class="assetRows"></div>
+        <div class="assetForm formGrid">
+          <input id="equipmentName" placeholder="设备名称 *" required />
+          <input id="equipmentModel" placeholder="型号" />
+          <input id="equipmentHolder" placeholder="使用人（可自定义）" list="equipmentHolderList" />
+          <input id="equipmentLocation" placeholder="使用地点（可自定义）" list="equipmentLocationList" />
+          <input id="equipmentStatus" placeholder="状态（在用/闲置/维修/报废）" list="equipmentStatusList" />
+          <input id="equipmentNote" placeholder="备注" />
+          <datalist id="equipmentHolderList"></datalist>
+          <datalist id="equipmentLocationList"></datalist>
+          <datalist id="equipmentStatusList">
+            <option>在用</option><option>闲置</option><option>维修</option><option>报废</option>
+          </datalist>
+          <div class="assetFormActions">
+            <button type="button" id="equipmentResetButton">清空表单</button>
+            <button type="button" id="equipmentSaveButton" class="primary">登记 / 保存</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="transferDialog">
+      <form id="transferForm" method="dialog">
+        <header>
+          <div>
+            <h2>设备转移</h2>
+            <p class="muted" id="transferEquipmentLabel"></p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div class="formGrid">
+          <label><span>新使用人（留空表示不变）</span><input id="transferHolder" placeholder="使用人" /></label>
+          <label><span>新使用地点（留空表示不变）</span><input id="transferLocation" placeholder="使用地点" /></label>
+          <label><span>转移原因</span><input id="transferReason" placeholder="例如：教室调整、岗位变动" /></label>
+        </div>
+        <footer>
+          <button value="cancel" type="submit" formnovalidate>取消</button>
+          <button id="transferSubmitButton" class="primary" type="button">确认转移</button>
+        </footer>
       </form>
     </dialog>
 

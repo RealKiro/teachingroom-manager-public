@@ -37,6 +37,30 @@ const state = {
 const fieldLabels = new Map();
 let datalistCounter = 0;
 
+const LEDGER_CATEGORIES = [
+  { value: "classroom", label: "班级教室" },
+  { value: "teacher", label: "教师" },
+  { value: "office", label: "办公室" }
+];
+
+const CATEGORY_FIELD_LABELS = {
+  building: { classroom: "楼栋", teacher: "所属部门/学科组", office: "所在楼栋" },
+  room: { classroom: "教室编号", teacher: "教师姓名", office: "办公室名称" },
+  class_name: { classroom: "班级/用途", teacher: "用途", office: "办公室用途" }
+};
+
+function categoryLabel(value) {
+  return LEDGER_CATEGORIES.find((item) => item.value === value)?.label || value || "班级教室";
+}
+
+function fieldsForCategory(fields, category = "classroom") {
+  return (fields || []).filter((field) => !field.categories || !field.categories.length || field.categories.includes(category));
+}
+
+function categoryFieldLabel(field, category = "classroom") {
+  return CATEGORY_FIELD_LABELS[field.key]?.[category] || field.label;
+}
+
 const el = {
   loginView: document.querySelector("#loginView"),
   appView: document.querySelector("#appView"),
@@ -92,6 +116,41 @@ const el = {
   submitChangeButton: document.querySelector("#submitChangeButton"),
   createClassroomDialog: document.querySelector("#createClassroomDialog"),
   createClassroomFields: document.querySelector("#createClassroomFields"),
+  createCategorySelect: document.querySelector("#createCategorySelect"),
+  categoryFilter: document.querySelector("#categoryFilter"),
+  inventoryButton: document.querySelector("#inventoryButton"),
+  equipmentButton: document.querySelector("#equipmentButton"),
+  labelsButton: document.querySelector("#labelsButton"),
+  inventoryDialog: document.querySelector("#inventoryDialog"),
+  inventorySearch: document.querySelector("#inventorySearch"),
+  inventoryStatusFilter: document.querySelector("#inventoryStatusFilter"),
+  inventoryRows: document.querySelector("#inventoryRows"),
+  inventoryName: document.querySelector("#inventoryName"),
+  inventoryModel: document.querySelector("#inventoryModel"),
+  inventoryLocation: document.querySelector("#inventoryLocation"),
+  inventoryStatus: document.querySelector("#inventoryStatus"),
+  inventoryQuantity: document.querySelector("#inventoryQuantity"),
+  inventoryNote: document.querySelector("#inventoryNote"),
+  inventorySaveButton: document.querySelector("#inventorySaveButton"),
+  inventoryResetButton: document.querySelector("#inventoryResetButton"),
+  equipmentDialog: document.querySelector("#equipmentDialog"),
+  equipmentSearch: document.querySelector("#equipmentSearch"),
+  equipmentStatusFilter: document.querySelector("#equipmentStatusFilter"),
+  equipmentRows: document.querySelector("#equipmentRows"),
+  equipmentName: document.querySelector("#equipmentName"),
+  equipmentModel: document.querySelector("#equipmentModel"),
+  equipmentHolder: document.querySelector("#equipmentHolder"),
+  equipmentLocation: document.querySelector("#equipmentLocation"),
+  equipmentStatus: document.querySelector("#equipmentStatus"),
+  equipmentNote: document.querySelector("#equipmentNote"),
+  equipmentSaveButton: document.querySelector("#equipmentSaveButton"),
+  equipmentResetButton: document.querySelector("#equipmentResetButton"),
+  transferDialog: document.querySelector("#transferDialog"),
+  transferEquipmentLabel: document.querySelector("#transferEquipmentLabel"),
+  transferHolder: document.querySelector("#transferHolder"),
+  transferLocation: document.querySelector("#transferLocation"),
+  transferReason: document.querySelector("#transferReason"),
+  transferSubmitButton: document.querySelector("#transferSubmitButton"),
   submitCreateClassroomButton: document.querySelector("#submitCreateClassroomButton"),
   passwordDialog: document.querySelector("#passwordDialog"),
   selfUsernameInput: document.querySelector("#selfUsernameInput"),
@@ -158,6 +217,26 @@ function bindEvents() {
   el.photoUploadButton.addEventListener("click", () => el.photoInput.click());
   el.photoInput.addEventListener("change", uploadClassroomPhoto);
   el.submitCreateClassroomButton.addEventListener("click", createClassroom);
+  el.createCategorySelect.addEventListener("change", () => {
+    state.createCategory = el.createCategorySelect.value;
+    openCreateClassroomFields();
+  });
+  el.categoryFilter.addEventListener("change", () => {
+    state.query.category = el.categoryFilter.value;
+    loadClassrooms();
+  });
+  el.inventoryButton.addEventListener("click", openInventoryManager);
+  el.inventorySearch.addEventListener("input", debounce(() => loadInventory(), 200));
+  el.inventoryStatusFilter.addEventListener("change", loadInventory);
+  el.inventorySaveButton.addEventListener("click", saveInventoryItem);
+  el.inventoryResetButton.addEventListener("click", resetInventoryForm);
+  el.equipmentButton.addEventListener("click", openEquipmentManager);
+  el.equipmentSearch.addEventListener("input", debounce(() => loadEquipment(), 200));
+  el.equipmentStatusFilter.addEventListener("change", loadEquipment);
+  el.equipmentSaveButton.addEventListener("click", saveEquipmentItem);
+  el.equipmentResetButton.addEventListener("click", equipmentResetForm);
+  el.transferSubmitButton.addEventListener("click", submitEquipmentTransfer);
+  el.labelsButton.addEventListener("click", openLabelPrinter);
   el.submitPasswordButton.addEventListener("click", changeOwnPassword);
   el.auditButton.addEventListener("click", openAuditLog);
   el.backupButton.addEventListener("click", openBackupManager);
@@ -274,6 +353,9 @@ function renderAuth() {
   el.auditButton.style.display = canManageSystem ? "" : "none";
   el.backupButton.style.display = canManageSystem ? "" : "none";
   el.userButton.style.display = canManageSystem ? "" : "none";
+  el.inventoryButton.style.display = state.user.role === "admin" ? "" : "none";
+  el.equipmentButton.style.display = state.user.role === "admin" ? "" : "none";
+  el.labelsButton.style.display = state.user.role === "admin" ? "" : "none";
 }
 
 function renderFilters() {
@@ -299,7 +381,7 @@ function renderRecords() {
     const v = record.values;
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><span class="room"><strong>${escapeHtml(doorTitle(v))}</strong><span>${escapeHtml(doorSubtitle(v))}</span></span></td>
+      <td><span class="room"><strong>${escapeHtml(doorTitle(v))}</strong><span>${escapeHtml(doorSubtitle(v, record.category))}${ledgerCategoryLabel(record) ? " · " + escapeHtml(ledgerCategoryLabel(record)) : ""}</span></span></td>
       <td>${escapeHtml(v.class_name || "")}</td>
       <td>${badge(v.department || "")}</td>
       <td>${escapeHtml(v.current_screen || "")}</td>
@@ -333,7 +415,7 @@ function renderCards() {
       <header>
         <div class="room">
           <strong>${escapeHtml(doorTitle(v))}</strong>
-          <span>${escapeHtml(v.building || "")} · ${escapeHtml(formatBuildingSide(v.orientation || ""))}${v.back_door ? ` · 后门 ${escapeHtml(v.back_door)}` : ""}</span>
+          <span>${escapeHtml(doorSubtitle(v, record.category))}${ledgerCategoryLabel(record) ? " · " + escapeHtml(ledgerCategoryLabel(record)) : ""}</span>
         </div>
         <div class="cardBadges">
           ${record.pendingChanges ? badge("待审核", "warn") : ""}
@@ -543,11 +625,12 @@ function renderReviews(requests) {
 
 function openEditor(record) {
   state.editingRecord = record;
-  el.editTitle.textContent = `${record.values.building} ${doorTitle(record.values)} 提交变更`;
+  const locationText = [record.values.building, doorTitle(record.values)].filter(Boolean).join(" ");
+  el.editTitle.textContent = `${categoryLabel(record.category)} · ${locationText} 提交变更`;
   el.reasonInput.value = "";
   renderPhotoList([]);
 
-  const inputs = state.fields
+  const inputs = fieldsForCategory(state.fields, record.category)
     .filter((field) => field.editable)
     .map((field) => buildClassroomFieldControl(field, record.values, "edit"));
 
@@ -560,27 +643,41 @@ function openEditor(record) {
 
 function openCreateClassroom() {
   if (state.user?.role !== "admin") return;
-  const inputs = state.fields
-    .filter((field) => field.key === "building" || field.key === "room" || field.editable)
-    .map((field) => buildClassroomFieldControl(field, {}, "create"));
-  el.createClassroomFields.replaceChildren(...inputs);
+  state.createCategory = "classroom";
+  el.createCategorySelect.value = "classroom";
+  openCreateClassroomFields();
   el.createClassroomDialog.showModal();
   el.createClassroomFields.querySelector('[name="building"]')?.focus();
 }
 
+function openCreateClassroomFields() {
+  const inputs = fieldsForCategory(state.fields, state.createCategory)
+    .filter((field) => field.key === "building" || field.key === "room" || field.editable)
+    .map((field) => buildClassroomFieldControl(field, {}, "create"));
+  el.createClassroomFields.replaceChildren(...inputs);
+}
+
+function fieldKeyRequired(field, category = "classroom") {
+  if (field.key === "building") return category === "classroom";
+  if (field.key === "room") return true;
+  return Boolean(field.required);
+}
+
 function buildClassroomFieldControl(field, values = {}, mode = "edit") {
+  const category = mode === "create" ? state.createCategory : state.editingRecord?.category || "classroom";
   const label = document.createElement("label");
-  label.innerHTML = `<span>${escapeHtml(field.label)}${field.required ? " *" : ""}</span>`;
+  const displayLabel = categoryFieldLabel(field, category);
+  label.innerHTML = `<span>${escapeHtml(displayLabel)}${fieldKeyRequired(field, category) ? " *" : ""}</span>`;
   const storedCurrent = values[field.key] || "";
   const current = field.key === "orientation" ? formatBuildingSide(storedCurrent) : storedCurrent;
   const input = field.type === "textarea" ? document.createElement("textarea") : document.createElement("input");
   input.name = field.key;
   input.value = current;
   input.dataset.original = current;
-  if (field.required || ["building", "room"].includes(field.key)) input.required = true;
+  if (fieldKeyRequired(field, category)) input.required = true;
   if (field.type === "textarea") input.rows = 3;
 
-  if (isPlanUpdateField(field.key)) {
+  if (field.type === "checkbox") {
     label.className = "checkboxField";
     input.type = "checkbox";
     input.checked = Boolean(current);
@@ -766,8 +863,9 @@ async function deleteClassroomPhoto(photo) {
 async function createClassroom() {
   if (state.user?.role !== "admin") return;
   const values = collectClassroomFormValues(el.createClassroomFields);
-  if (!values.building || !values.room) {
-    showToast("楼栋和教室编号不能为空");
+  const category = state.createCategory;
+  if (!values.room || (category === "classroom" && !values.building)) {
+    showToast(category === "classroom" ? "楼栋和教室编号不能为空" : "名称不能为空");
     return;
   }
 
@@ -777,18 +875,18 @@ async function createClassroom() {
     const result = await sendReliableJsonMutation(
       "/api/classrooms",
       "POST",
-      { values, clientRequestId: makeClientRequestId() },
-      "新增教室"
+      { category, values, clientRequestId: makeClientRequestId() },
+      "新增台账"
     );
     el.createClassroomDialog.close();
     if (result.queued) {
-      showToast("网络不稳定，新增教室已保存在本机，联网后自动提交");
+      showToast("网络不稳定，新增台账已保存在本机，联网后自动提交");
       return;
     }
     if (result.status === "pending") {
       showToast("已提交新增申请，等待其他管理员审核");
     } else {
-      showToast("教室记录已新增");
+      showToast("台账记录已新增");
       state.query.building = "";
       state.query.department = "";
       state.query.planned = "";
@@ -1285,11 +1383,19 @@ function isPlanUpdateField(key) {
   return ["plan_screen", "plan_board", "plan_audio", "plan_recording"].includes(key);
 }
 
+function ledgerCategoryLabel(record) {
+  const category = record?.category || "classroom";
+  return category === "classroom" ? "" : categoryLabel(category);
+}
+
 function doorTitle(values) {
   return values.front_door || values.room || "";
 }
 
-function doorSubtitle(values) {
+function doorSubtitle(values, category = "classroom") {
+  if (category !== "classroom") {
+    return values.building || "位置待补充";
+  }
   const parts = [`${values.building || ""} · ${formatBuildingSide(values.orientation || "")}`.trim()];
   if (values.back_door) parts.push(`后门 ${values.back_door}`);
   else parts.push("后门待补充");
@@ -1647,4 +1753,241 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// ---- 备件库存与设备登记（管理员直接生效 + 审计） ----
+
+function resetInventoryForm() {
+  el.inventoryName.value = "";
+  el.inventoryModel.value = "";
+  el.inventoryLocation.value = "";
+  el.inventoryStatus.value = "";
+  el.inventoryQuantity.value = "1";
+  el.inventoryNote.value = "";
+  el.inventorySaveButton.dataset.editingId = "";
+  el.inventorySaveButton.textContent = "入库 / 保存";
+}
+
+function fillEquipmentSuggestions() {
+  const holders = new Set(state.equipment?.map((item) => item.holder).filter(Boolean) || []);
+  const locations = new Set(state.equipment?.map((item) => item.location).filter(Boolean) || []);
+  for (const record of state.records) {
+    if (record.values.building) locations.add(record.values.building);
+    if (record.values.room) locations.add(record.values.room);
+  }
+  el.equipmentHolderList.replaceChildren(...[...holders].sort().map((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    return option;
+  }));
+  el.equipmentLocationList.replaceChildren(...[...locations].sort().map((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    return option;
+  }));
+}
+
+async function openInventoryManager() {
+  if (state.user?.role !== "admin") return;
+  el.inventoryDialog.showModal();
+  await loadInventory();
+}
+
+async function loadInventory() {
+  const params = new URLSearchParams();
+  params.set("search", el.inventorySearch.value.trim());
+  params.set("status", el.inventoryStatusFilter.value);
+  const result = await requestJson(`/api/inventory?${params.toString()}`);
+  state.inventory = result.data || [];
+  renderInventoryRows();
+}
+
+function renderInventoryRows() {
+  const rows = state.inventory.map((item) => {
+    const row = document.createElement("div");
+    row.className = "assetRow";
+    row.innerHTML = `
+      <div class="assetMain">
+        <strong>${escapeHtml(item.name)}</strong>
+        <span>${escapeHtml([item.model, `数量 ${item.quantity}`, item.location].filter(Boolean).join(" · "))}</span>
+      </div>
+      <div class="assetSide">
+        ${badge(item.status || "全新", item.status === "损坏" || item.status === "待修" ? "warn" : "ok")}
+        <button type="button" data-action="edit">编辑</button>
+        <button type="button" data-action="delete" class="dangerText">删除</button>
+      </div>
+    `;
+    row.querySelector('[data-action="edit"]').addEventListener("click", () => {
+      el.inventoryName.value = item.name;
+      el.inventoryModel.value = item.model || "";
+      el.inventoryLocation.value = item.location || "";
+      el.inventoryStatus.value = item.status || "";
+      el.inventoryQuantity.value = item.quantity || 1;
+      el.inventoryNote.value = item.note || "";
+      el.inventorySaveButton.dataset.editingId = item.id;
+      el.inventorySaveButton.textContent = "保存修改";
+    });
+    row.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+      if (!window.confirm(`删除备件「${item.name}」？`)) return;
+      await requestJson(`/api/inventory/${item.id}`, "DELETE");
+      showToast("备件已删除");
+      await loadInventory();
+    });
+    return row;
+  });
+  el.inventoryRows.replaceChildren(...rows.length
+    ? rows
+    : [Object.assign(document.createElement("div"), { className: "assetEmpty", textContent: "暂无备件记录" })]);
+}
+
+async function saveInventoryItem() {
+  const payload = {
+    name: el.inventoryName.value.trim(),
+    model: el.inventoryModel.value.trim(),
+    location: el.inventoryLocation.value.trim(),
+    status: el.inventoryStatus.value.trim() || "全新",
+    quantity: Number(el.inventoryQuantity.value) || 1,
+    note: el.inventoryNote.value.trim()
+  };
+  if (!payload.name) {
+    showToast("设备名称不能为空");
+    return;
+  }
+  const editingId = el.inventorySaveButton.dataset.editingId;
+  el.inventorySaveButton.disabled = true;
+  try {
+    if (editingId) {
+      await requestJson(`/api/inventory/${editingId}`, "PATCH", payload);
+      showToast("备件已更新");
+    } else {
+      await requestJson("/api/inventory", "POST", payload);
+      showToast("备件已入库");
+    }
+    resetInventoryForm();
+    await loadInventory();
+  } finally {
+    el.inventorySaveButton.disabled = false;
+  }
+}
+
+async function openEquipmentManager() {
+  if (state.user?.role !== "admin") return;
+  el.equipmentDialog.showModal();
+  await Promise.all([loadEquipment(), Promise.resolve(fillEquipmentSuggestions())]);
+}
+
+async function loadEquipment() {
+  const params = new URLSearchParams();
+  params.set("search", el.equipmentSearch.value.trim());
+  params.set("status", el.equipmentStatusFilter.value);
+  const result = await requestJson(`/api/equipment?${params.toString()}`);
+  state.equipment = result.data || [];
+  fillEquipmentSuggestions();
+  renderEquipmentRows();
+}
+
+function renderEquipmentRows() {
+  const rows = state.equipment.map((item) => {
+    const row = document.createElement("div");
+    row.className = "assetRow";
+    row.innerHTML = `
+      <div class="assetMain">
+        <strong>${escapeHtml(item.name)}</strong>
+        <span>${escapeHtml([item.model, item.holder ? `使用人 ${item.holder}` : "", item.location, item.asset_code].filter(Boolean).join(" · "))}</span>
+      </div>
+      <div class="assetSide">
+        ${badge(item.status || "在用", item.status === "报废" || item.status === "维修" ? "warn" : "ok")}
+        <button type="button" data-action="transfer">转移</button>
+        <button type="button" data-action="edit">编辑</button>
+        ${isSuperAdmin() ? `<button type="button" data-action="delete" class="dangerText">删除</button>` : ""}
+      </div>
+    `;
+    row.querySelector('[data-action="edit"]').addEventListener("click", () => {
+      el.equipmentName.value = item.name;
+      el.equipmentModel.value = item.model || "";
+      el.equipmentHolder.value = item.holder || "";
+      el.equipmentLocation.value = item.location || "";
+      el.equipmentStatus.value = item.status || "";
+      el.equipmentNote.value = item.note || "";
+      el.equipmentSaveButton.dataset.editingId = item.id;
+      el.equipmentSaveButton.textContent = "保存修改";
+    });
+    row.querySelector('[data-action="transfer"]').addEventListener("click", () => {
+      state.transferEquipment = item;
+      el.transferEquipmentLabel.textContent = `${item.name}（${item.asset_code}） 当前：${[item.holder || "无使用人", item.location || "无地点"].filter(Boolean).join(" / ")}`;
+      el.transferHolder.value = "";
+      el.transferLocation.value = "";
+      el.transferReason.value = "";
+      el.transferDialog.showModal();
+    });
+    row.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
+      if (!window.confirm(`删除设备「${item.name}」？该操作不可恢复。`)) return;
+      await requestJson(`/api/equipment/${item.id}`, "DELETE");
+      showToast("设备已删除");
+      await loadEquipment();
+    });
+    return row;
+  });
+  el.equipmentRows.replaceChildren(...rows.length
+    ? rows
+    : [Object.assign(document.createElement("div"), { className: "assetEmpty", textContent: "暂无设备登记记录" })]);
+}
+
+async function saveEquipmentItem() {
+  const payload = {
+    name: el.equipmentName.value.trim(),
+    model: el.equipmentModel.value.trim(),
+    holder: el.equipmentHolder.value.trim(),
+    location: el.equipmentLocation.value.trim(),
+    status: el.equipmentStatus.value.trim() || "在用",
+    note: el.equipmentNote.value.trim()
+  };
+  if (!payload.name) {
+    showToast("设备名称不能为空");
+    return;
+  }
+  const editingId = el.equipmentSaveButton.dataset.editingId;
+  el.equipmentSaveButton.disabled = true;
+  try {
+    if (editingId) {
+      await requestJson(`/api/equipment/${editingId}`, "PATCH", payload);
+      showToast("设备已更新");
+    } else {
+      const result = await requestJson("/api/equipment", "POST", payload);
+      showToast(`设备已登记，资产编码 ${result.data?.asset_code || ""}`);
+    }
+    equipmentResetForm();
+    await loadEquipment();
+  } finally {
+    el.equipmentSaveButton.disabled = false;
+ 
+  }
+}
+
+async function submitEquipmentTransfer() {
+  const item = state.transferEquipment;
+  if (!item) return;
+  const toHolder = el.transferHolder.value.trim();
+  const toLocation = el.transferLocation.value.trim();
+  if (!toHolder && !toLocation) {
+    showToast("请填写新的使用人或使用地点");
+    return;
+  }
+  el.transferSubmitButton.disabled = true;
+  try {
+    await requestJson(`/api/equipment/${item.id}/transfer`, "POST", {
+      toHolder,
+      toLocation,
+      reason: el.transferReason.value.trim()
+    });
+    el.transferDialog.close();
+    showToast("设备已转移");
+    await loadEquipment();
+  } finally {
+    el.transferSubmitButton.disabled = false;
+  }
+}
+
+function openLabelPrinter() {
+  window.open("/labels.html", "_blank");
 }

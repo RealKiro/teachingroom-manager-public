@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import express from "express";
+import QRCode from "qrcode";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -10,6 +11,7 @@ import {
   db,
   backfillClassroomHistory,
   dbPath,
+  generateAssetCode,
   getClassroomHistory,
   getFields,
   initDb,
@@ -116,6 +118,74 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, imported: importResult });
 });
 
+// 扫码查询：免登录公开摘要（二维码指向 /scan.html?code=<资产编码>）
+app.get("/api/scan/:code", (req, res) => {
+  const code = String(req.params.code || "").trim().toUpperCase();
+  if (!code) return res.status(404).json({ error: "未找到该编码对应的资产" });
+
+  const classroom = db.prepare(`
+    SELECT id, building, room, category, asset_code AS assetCode, updated_at AS updatedAt
+    FROM classrooms
+    WHERE UPPER(asset_code) = ?
+  `).get(code);
+  if (classroom) {
+    const labels = new Map(getFields().map((field) => [field.key, field.label]));
+    const values = { building: classroom.building, room: classroom.room };
+    for (const row of db.prepare("SELECT field_key, value FROM classroom_values WHERE classroom_id = ?").all(classroom.id)) {
+      values[row.field_key] = row.value;
+    }
+    const summaryKeys = ["class_name", "department", "current_screen", "current_board", "current_audio", "mouse", "keyboard", "speaker", "repair_date", "repair_warranty"];
+    const summary = summaryKeys
+      .filter((key) => String(values[key] || "").trim())
+      .map((key) => ({ label: labels.get(key) || key, value: values[key] }));
+    return res.json({
+      kind: "ledger",
+      category: classroom.category || "classroom",
+      assetCode: classroom.assetCode,
+      title: classroom.category === "teacher" ? classroom.room : `${classroom.building} ${classroom.room}`.trim(),
+      location: classroom.building,
+      summary,
+      updatedAt: classroom.updatedAt
+    });
+  }
+
+  const equipment = db.prepare(`
+    SELECT id, asset_code AS assetCode, name, model, holder, location, status, updated_at AS updatedAt
+    FROM equipment_registry
+    WHERE UPPER(asset_code) = ?
+  `).get(code);
+  if (equipment) {
+    return res.json({
+      kind: "equipment",
+      assetCode: equipment.assetCode,
+      title: equipment.name,
+      location: equipment.location,
+      summary: [
+        { label: "型号", value: equipment.model },
+        { label: "使用人", value: equipment.holder },
+        { label: "使用地点", value: equipment.location },
+        { label: "状态", value: equipment.status }
+      ].filter((item) => item.value),
+      updatedAt: equipment.updatedAt
+    });
+  }
+
+  res.status(404).json({ error: "未找到该编码对应的资产" });
+});
+
+app.get("/api/qrcode", requireLogin, async (req, res, next) => {
+  try {
+    const text = String(req.query.text || "").trim();
+    if (!text) return res.status(400).json({ error: "缺少二维码内容" });
+    const svg = await QRCode.toString(text, { type: "svg", margin: 1 });
+    res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(svg);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/login", (req, res, next) => {
   const { username, password } = req.body || {};
   const user = db.prepare("SELECT * FROM users WHERE username = ? AND active = 1 AND deleted_at IS NULL").get(username || "");
@@ -178,13 +248,25 @@ app.get("/api/suggestions", requireLogin, (req, res) => {
 });
 
 app.post("/api/fields", requireSuperAdmin, (req, res) => {
-  const { key, label, group, type, options, filterable = false, editable = true, publicApi = false } = req.body || {};
+  const { key, label, group, type, options, filterable = false, editable = true, publicApi = false, categories = null } = req.body || {};
   const cleanKey = String(key || "").trim().replace(/[^a-zA-Z0-9_]/g, "_");
   if (!cleanKey || !label) return res.status(400).json({ error: "字段标识和名称不能为空" });
+  const validCategories = ["classroom", "teacher", "office"];
+  const categoryList = Array.isArray(categories) && categories.length
+    ? categories.filter((item) => validCategories.includes(item))
+    : null;
 
   db.prepare(`
-    INSERT INTO field_definitions (key, label, group_name, type, options_json, sort_order, filterable, editable, public_api)
-    VALUES (?, ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) + 10 FROM field_definitions), 1000), ?, ?, ?)
+    INSERT INTO field_definitions (key, label, group_name, type, options_json, sort_order, filterable, editable, public_api, categories_json)
+    VALUES (?, ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) + 10 FROM field_definitions), 1000), ?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      label = excluded.label,
+      group_name = excluded.group_name,
+      options_json = excluded.options_json,
+      filterable = excluded.filterable,
+      editable = excluded.editable,
+      public_api = excluded.public_api,
+      categories_json = excluded.categories_json
   `).run(
     cleanKey,
     String(label).trim(),
@@ -193,7 +275,8 @@ app.post("/api/fields", requireSuperAdmin, (req, res) => {
     JSON.stringify(Array.isArray(options) ? options : []),
     filterable ? 1 : 0,
     editable ? 1 : 0,
-    publicApi ? 1 : 0
+    publicApi ? 1 : 0,
+    categoryList ? JSON.stringify(categoryList) : null
   );
   logAudit(req.session.user.id, "create_field", "field", null, { key: cleanKey, label });
   res.json({ fields: getFields() });
@@ -221,8 +304,9 @@ app.get("/api/classrooms/:id/history", requireLogin, (req, res) => {
 app.post("/api/classrooms", requireAdmin, (req, res) => {
   const values = req.body?.values;
   if (!values || typeof values !== "object" || Array.isArray(values)) {
-    return res.status(400).json({ error: "教室信息不完整" });
+    return res.status(400).json({ error: "台账信息不完整" });
   }
+  const category = ["classroom", "teacher", "office"].includes(req.body?.category) ? req.body.category : "classroom";
 
   const clientRequestId = normalizeClientRequestId(req.body?.clientRequestId);
   if (clientRequestId) {
@@ -243,12 +327,15 @@ app.post("/api/classrooms", requireAdmin, (req, res) => {
 
   const fields = getFields();
   const { building, room, savedValues } = normalizeClassroomCreateValues(values, fields);
-  if (!building || !room) return res.status(400).json({ error: "楼栋和教室编号不能为空" });
+  const missingIdentity = !room || (category === "classroom" && !building);
+  if (missingIdentity) {
+    return res.status(400).json({ error: category === "classroom" ? "楼栋和教室编号不能为空" : "名称不能为空" });
+  }
 
   const existing = db.prepare("SELECT id FROM classrooms WHERE building = ? AND room = ?").get(building, room);
-  if (existing) return res.status(409).json({ error: "该楼栋和教室编号已存在" });
+  if (existing) return res.status(409).json({ error: "相同位置/名称的台账已存在" });
 
-  const pendingDuplicate = findPendingClassroomCreateRequest(building, room);
+  const pendingDuplicate = findPendingClassroomCreateRequest(building, room, category);
   if (pendingDuplicate) return res.status(409).json({ error: "该教室已有待审核新增申请" });
 
   if (req.session.user.username !== superAdminUsername) {
@@ -256,17 +343,17 @@ app.post("/api/classrooms", requireAdmin, (req, res) => {
       INSERT INTO classroom_create_requests (submitter_id, values_json, client_request_id, created_at)
       VALUES (?, ?, ?, ${nowSql})
       RETURNING id
-    `).get(req.session.user.id, JSON.stringify({ building, room, values: savedValues }), clientRequestId || null);
-    logAudit(req.session.user.id, "submit_create_classroom", "classroom_create_request", request.id, { building, room, values: savedValues });
+    `).get(req.session.user.id, JSON.stringify({ building, room, category, values: savedValues }), clientRequestId || null);
+    logAudit(req.session.user.id, "submit_create_classroom", "classroom_create_request", request.id, { building, room, category, values: savedValues });
     return res.status(202).json({ id: request.id, status: "pending" });
   }
 
   const createTx = db.transaction(() => {
     const classroom = db.prepare(`
-      INSERT INTO classrooms (building, room, client_request_id, created_at, updated_at)
-      VALUES (?, ?, ?, ${nowSql}, ${nowSql})
+      INSERT INTO classrooms (building, room, category, asset_code, client_request_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ${nowSql}, ${nowSql})
       RETURNING id, building, room
-    `).get(building, room, clientRequestId || null);
+    `).get(building, room, category, generateUniqueClassroomAssetCode(), clientRequestId || null);
 
     for (const [fieldKey, value] of Object.entries(savedValues)) setClassroomValue(classroom.id, fieldKey, value);
 
@@ -786,10 +873,10 @@ app.post("/api/classroom-create-requests/:id/review", requireAdmin, (req, res) =
         throw error;
       }
       const classroom = db.prepare(`
-        INSERT INTO classrooms (building, room, client_request_id, created_at, updated_at)
-        VALUES (?, ?, ?, ${nowSql}, ${nowSql})
+        INSERT INTO classrooms (building, room, category, asset_code, client_request_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ${nowSql}, ${nowSql})
         RETURNING id
-      `).get(payload.building, payload.room, request.client_request_id || null);
+      `).get(payload.building, payload.room, payload.category, generateUniqueClassroomAssetCode(), request.client_request_id || null);
       classroomId = classroom.id;
       for (const [fieldKey, value] of Object.entries(payload.values)) setClassroomValue(classroom.id, fieldKey, value);
     }
@@ -1243,6 +1330,175 @@ app.delete("/api/users/:id", requireSuperAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- 备件库存（管理员直接生效 + 审计） ----
+function normalizeInventoryPayload(body = {}) {
+  const name = String(body?.name || "").trim();
+  if (!name) return null;
+  const quantity = Number(body?.quantity);
+  return {
+    name,
+    model: String(body?.model || "").trim(),
+    location: String(body?.location || "").trim(),
+    status: String(body?.status || "").trim() || "全新",
+    quantity: Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1,
+    note: String(body?.note || "").trim()
+  };
+}
+
+app.get("/api/inventory", requireLogin, (req, res) => {
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const status = String(req.query.status || "").trim();
+  let rows = db.prepare("SELECT * FROM inventory_items ORDER BY updated_at DESC, id DESC").all();
+  if (status) rows = rows.filter((row) => row.status === status);
+  if (search) {
+    rows = rows.filter((row) => `${row.name} ${row.model} ${row.location} ${row.note}`.toLowerCase().includes(search));
+  }
+  res.json({ data: rows });
+});
+
+app.post("/api/inventory", requireAdmin, (req, res) => {
+  const payload = normalizeInventoryPayload(req.body);
+  if (!payload) return res.status(400).json({ error: "设备名称不能为空" });
+  const result = db.prepare(`
+    INSERT INTO inventory_items (name, model, location, status, quantity, note)
+    VALUES (@name, @model, @location, @status, @quantity, @note)
+  `).run(payload);
+  logAudit(req.session.user.id, "create_inventory_item", "inventory_item", result.lastInsertRowid, payload);
+  res.status(201).json({ data: db.prepare("SELECT * FROM inventory_items WHERE id = ?").get(result.lastInsertRowid) });
+});
+
+app.patch("/api/inventory/:id", requireAdmin, (req, res) => {
+  const item = db.prepare("SELECT * FROM inventory_items WHERE id = ?").get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: "备件不存在" });
+  const payload = normalizeInventoryPayload({ ...item, ...req.body });
+  if (!payload) return res.status(400).json({ error: "设备名称不能为空" });
+  db.prepare(`
+    UPDATE inventory_items
+    SET name = @name, model = @model, location = @location, status = @status, quantity = @quantity, note = @note, updated_at = ${nowSql}
+    WHERE id = @id
+  `).run({ ...payload, id: item.id });
+  logAudit(req.session.user.id, "update_inventory_item", "inventory_item", item.id, payload);
+  res.json({ data: db.prepare("SELECT * FROM inventory_items WHERE id = ?").get(item.id) });
+});
+
+app.delete("/api/inventory/:id", requireAdmin, (req, res) => {
+  const item = db.prepare("SELECT * FROM inventory_items WHERE id = ?").get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: "备件不存在" });
+  db.prepare("DELETE FROM inventory_items WHERE id = ?").run(item.id);
+  logAudit(req.session.user.id, "delete_inventory_item", "inventory_item", item.id, { name: item.name });
+  res.json({ ok: true });
+});
+
+// ---- 设备登记与转移（管理员直接生效 + 审计） ----
+function normalizeEquipmentPayload(body = {}) {
+  const name = String(body?.name || "").trim();
+  if (!name) return null;
+  return {
+    name,
+    model: String(body?.model || "").trim(),
+    holder: String(body?.holder || "").trim(),
+    location: String(body?.location || "").trim(),
+    status: String(body?.status || "").trim() || "在用",
+    note: String(body?.note || "").trim()
+  };
+}
+
+app.get("/api/equipment", requireLogin, (req, res) => {
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const status = String(req.query.status || "").trim();
+  let rows = db.prepare("SELECT * FROM equipment_registry ORDER BY updated_at DESC, id DESC").all();
+  if (status) rows = rows.filter((row) => row.status === status);
+  if (search) {
+    rows = rows.filter((row) => `${row.name} ${row.model} ${row.holder} ${row.location} ${row.asset_code} ${row.note}`.toLowerCase().includes(search));
+  }
+  res.json({ data: rows });
+});
+
+app.post("/api/equipment", requireAdmin, (req, res) => {
+  const payload = normalizeEquipmentPayload(req.body);
+  if (!payload) return res.status(400).json({ error: "设备名称不能为空" });
+  const exists = db.prepare("SELECT id FROM equipment_registry WHERE asset_code = ?");
+  let assetCode = "";
+  db.transaction(() => {
+    do {
+      assetCode = generateAssetCode("EQ");
+    } while (exists.get(assetCode));
+    const result = db.prepare(`
+      INSERT INTO equipment_registry (asset_code, name, model, holder, location, status, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(assetCode, payload.name, payload.model, payload.holder, payload.location, payload.status, payload.note);
+    payload.id = result.lastInsertRowid;
+  })();
+  logAudit(req.session.user.id, "create_equipment", "equipment", payload.id, { ...payload, assetCode });
+  res.status(201).json({ data: db.prepare("SELECT * FROM equipment_registry WHERE id = ?").get(payload.id) });
+});
+
+app.patch("/api/equipment/:id", requireAdmin, (req, res) => {
+  const item = db.prepare("SELECT * FROM equipment_registry WHERE id = ?").get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: "设备不存在" });
+  const payload = normalizeEquipmentPayload({ ...item, ...req.body });
+  if (!payload) return res.status(400).json({ error: "设备名称不能为空" });
+  db.prepare(`
+    UPDATE equipment_registry
+    SET name = @name, model = @model, holder = @holder, location = @location, status = @status, note = @note, updated_at = ${nowSql}
+    WHERE id = @id
+  `).run({ ...payload, id: item.id });
+  logAudit(req.session.user.id, "update_equipment", "equipment", item.id, payload);
+  res.json({ data: db.prepare("SELECT * FROM equipment_registry WHERE id = ?").get(item.id) });
+});
+
+app.delete("/api/equipment/:id", requireSuperAdmin, (req, res) => {
+  const item = db.prepare("SELECT * FROM equipment_registry WHERE id = ?").get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: "设备不存在" });
+  db.prepare("DELETE FROM equipment_registry WHERE id = ?").run(item.id);
+  logAudit(req.session.user.id, "delete_equipment", "equipment", item.id, { name: item.name, assetCode: item.asset_code });
+  res.json({ ok: true });
+});
+
+app.post("/api/equipment/:id/transfer", requireAdmin, (req, res) => {
+  const item = db.prepare("SELECT * FROM equipment_registry WHERE id = ?").get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: "设备不存在" });
+  const toHolder = String(req.body?.toHolder || "").trim();
+  const toLocation = String(req.body?.toLocation || "").trim();
+  const reason = String(req.body?.reason || "").trim();
+  if (!toHolder && !toLocation) return res.status(400).json({ error: "请填写新的使用人或使用地点" });
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE equipment_registry
+      SET holder = ?, location = ?, updated_at = ${nowSql}
+      WHERE id = ?
+    `).run(toHolder || item.holder, toLocation || item.location, item.id);
+    db.prepare(`
+      INSERT INTO equipment_transfers (equipment_id, from_holder, from_location, to_holder, to_location, reason, actor_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(item.id, item.holder, item.location, toHolder || item.holder, toLocation || item.location, reason, req.session.user.id);
+  })();
+  logAudit(req.session.user.id, "transfer_equipment", "equipment", item.id, {
+    assetCode: item.asset_code,
+    name: item.name,
+    fromHolder: item.holder,
+    fromLocation: item.location,
+    toHolder: toHolder || item.holder,
+    toLocation: toLocation || item.location,
+    reason
+  });
+  res.json({ data: db.prepare("SELECT * FROM equipment_registry WHERE id = ?").get(item.id) });
+});
+
+app.get("/api/equipment/:id/transfers", requireLogin, (req, res) => {
+  const equipmentId = Number(req.params.id);
+  const rows = db.prepare(`
+    SELECT t.id, t.from_holder AS fromHolder, t.from_location AS fromLocation,
+           t.to_holder AS toHolder, t.to_location AS toLocation, t.reason,
+           t.created_at AS createdAt, u.display_name AS actorName
+    FROM equipment_transfers t
+    LEFT JOIN users u ON u.id = t.actor_id
+    WHERE t.equipment_id = ?
+    ORDER BY t.created_at DESC, t.id DESC
+  `).all(equipmentId);
+  res.json({ data: rows });
+});
+
 app.get("/api/audit-logs", requireSuperAdmin, (req, res) => {
   const search = String(req.query.search || "").trim().toLowerCase();
   const action = String(req.query.action || "").trim();
@@ -1527,6 +1783,15 @@ function normalizeClassroomCreateValues(values, fields) {
   return { building, room, savedValues };
 }
 
+function generateUniqueClassroomAssetCode() {
+  const exists = db.prepare("SELECT id FROM classrooms WHERE asset_code = ?");
+  let code;
+  do {
+    code = generateAssetCode("AS");
+  } while (exists.get(code));
+  return code;
+}
+
 function parseClassroomCreatePayload(valuesJson) {
   const payload = parseJsonObject(valuesJson);
   const values = payload.values && typeof payload.values === "object" && !Array.isArray(payload.values)
@@ -1535,11 +1800,12 @@ function parseClassroomCreatePayload(valuesJson) {
   return {
     building: String(payload.building || "").trim(),
     room: String(payload.room || "").trim(),
+    category: ["classroom", "teacher", "office"].includes(payload.category) ? payload.category : "classroom",
     values
   };
 }
 
-function findPendingClassroomCreateRequest(building, room) {
+function findPendingClassroomCreateRequest(building, room, category = "classroom") {
   const pendingRequests = db.prepare(`
     SELECT id, values_json AS valuesJson
     FROM classroom_create_requests
@@ -1548,7 +1814,7 @@ function findPendingClassroomCreateRequest(building, room) {
   `).all();
   return pendingRequests.find((request) => {
     const payload = parseClassroomCreatePayload(request.valuesJson);
-    return payload.building === building && payload.room === room;
+    return payload.building === building && payload.room === room && payload.category === category;
   });
 }
 
@@ -1624,7 +1890,14 @@ function auditActionLabel(action) {
     login: "登录",
     logout: "退出",
     create_field: "新增字段",
-    create_classroom: "新增教室",
+    create_classroom: "新增台账",
+    create_inventory_item: "备件入库",
+    update_inventory_item: "更新备件",
+    delete_inventory_item: "删除备件",
+    create_equipment: "设备登记",
+    update_equipment: "更新设备",
+    delete_equipment: "删除设备",
+    transfer_equipment: "设备转移",
     submit_create_classroom: "提交新增教室",
     review_create_approved: "新增审核通过",
     review_create_rejected: "新增审核拒绝",
@@ -1668,6 +1941,12 @@ function buildAuditTargetLabel(row, detail) {
   }
   if (row.targetType === "classroom_photo_request") {
     return `${detail.building || row.building || ""} ${detail.room || row.frontDoor || row.room || ""} ${detail.file || "照片"}`.trim();
+  }
+  if (row.targetType === "inventory_item") {
+    return detail.name || `备件 ${row.targetId || ""}`.trim();
+  }
+  if (row.targetType === "equipment") {
+    return [detail.name, detail.assetCode].filter(Boolean).join(" · ") || `设备 ${row.targetId || ""}`.trim();
   }
   if (row.targetType === "user") {
     return detail.username || row.targetUsername || row.targetUserName || `用户 ${row.targetId || ""}`.trim();
@@ -2196,6 +2475,8 @@ function getClassroomRecords(filters = {}, options = {}) {
       id: classroom.id,
       building: classroom.building,
       room: classroom.room,
+      category: classroom.category || "classroom",
+      assetCode: classroom.asset_code || null,
       updatedAt: classroom.updated_at,
       pendingChanges: pendingByClassroom.get(classroom.id) || 0,
       photoCount: photosByClassroom.get(classroom.id) || 0,
@@ -2231,6 +2512,7 @@ function getPendingCreateSummaryRecords() {
       requestId: row.id,
       building: payload.building,
       room: payload.room,
+      category: payload.category,
       updatedAt: row.createdAt,
       pendingChanges: 1,
       photoCount: 0,
@@ -2243,6 +2525,7 @@ function classroomRecordMatchesFilters(record, filters = {}, searchableKeys = nu
   const search = String(filters.search || "").trim().toLowerCase();
   const building = String(filters.building || "").trim();
   const department = String(filters.department || "").trim();
+  const category = String(filters.category || "").trim();
   const orientation = String(filters.orientation || filters.side || "").trim().replace(/侧$/, "");
   const planned = String(filters.planned || "").trim();
   const pending = String(filters.pending || "").trim();
@@ -2250,6 +2533,7 @@ function classroomRecordMatchesFilters(record, filters = {}, searchableKeys = nu
   const idFilter = parseIdFilter(filters.ids);
 
   if (idFilter && (!record.id || !idFilter.has(record.id))) return false;
+  if (category && (record.category || "classroom") !== category) return false;
   if (building && record.values.building !== building) return false;
   if (department && record.values.department !== department) return false;
   if (orientation && record.values.orientation !== orientation) return false;
@@ -2789,6 +3073,8 @@ function toPublicClassroom(record, publishedKeys = new Set(getPublicFields().map
   const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => publishedKeys.has(key)));
   return {
     id: record.id,
+    category: record.category || "classroom",
+    assetCode: record.assetCode || null,
     code: publicValue("room"),
     building: publicValue("building"),
     orientation: publicValue("orientation"),

@@ -23,24 +23,32 @@ db.pragma("foreign_keys = ON");
 export const nowSql = "datetime('now')";
 
 export const defaultFields = [
-  { key: "building", label: "楼栋", group: "位置", type: "select", sort: 10, filterable: 1, editable: 0, required: 1, publicApi: 1 },
-  { key: "orientation", label: "楼侧", group: "位置", type: "select", sort: 20, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "room", label: "教室编号", group: "位置", type: "text", sort: 30, filterable: 1, editable: 0, required: 1, publicApi: 1 },
-  { key: "front_door", label: "前门门牌号", group: "位置", type: "text", sort: 31, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "back_door", label: "后门门牌号", group: "位置", type: "text", sort: 32, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "class_name", label: "班级/用途", group: "现有情况", type: "text", sort: 40, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "current_screen", label: "现有屏幕", group: "现有情况", type: "text", sort: 50, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "current_board", label: "书写板类型", group: "现有情况", type: "text", sort: 60, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "current_audio", label: "教师扩声", group: "现有情况", type: "select", options: ["有", ""], sort: 70, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "current_recording", label: "录播", group: "现有情况", type: "select", options: ["有", ""], sort: 75, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "monitoring", label: "监控", group: "现有情况", type: "select", options: ["有", ""], sort: 76, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "install_date", label: "安装日期", group: "现有情况", type: "month", sort: 80, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "department", label: "级部", group: "2026暑期更新计划", type: "select", options: ["小学", "初中", "高中"], sort: 90, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "plan_screen", label: "计划屏幕", group: "2026暑期更新计划", type: "checkbox", sort: 100, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "plan_board", label: "计划书写板", group: "2026暑期更新计划", type: "checkbox", sort: 110, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "plan_audio", label: "计划教师扩声", group: "2026暑期更新计划", type: "checkbox", sort: 120, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "plan_recording", label: "计划录播", group: "2026暑期更新计划", type: "checkbox", sort: 130, filterable: 1, editable: 1, publicApi: 1 },
-  { key: "inspection_note", label: "巡查备注", group: "巡查", type: "textarea", sort: 200, filterable: 0, editable: 1, publicApi: 0 }
+  { key: "building", label: "楼栋/所属", group: "位置", type: "select", sort: 10, filterable: 1, editable: 0, required: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "orientation", label: "楼侧", group: "位置", type: "select", sort: 20, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "room", label: "教室编号/名称", group: "位置", type: "text", sort: 30, filterable: 1, editable: 0, required: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "front_door", label: "前门门牌号", group: "位置", type: "text", sort: 31, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "back_door", label: "后门门牌号", group: "位置", type: "text", sort: 32, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "class_name", label: "班级/用途", group: "现有情况", type: "text", sort: 40, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "office"] },
+  { key: "current_screen", label: "现有屏幕", group: "现有情况", type: "text", sort: 50, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "current_board", label: "书写板类型", group: "现有情况", type: "text", sort: 60, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "current_audio", label: "教师扩声", group: "现有情况", type: "select", options: ["有", ""], sort: 70, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "current_recording", label: "录播", group: "现有情况", type: "select", options: ["有", ""], sort: 75, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "monitoring", label: "监控", group: "现有情况", type: "select", options: ["有", ""], sort: 76, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "mouse", label: "鼠标", group: "现有情况", type: "select", options: ["无", "无线", "有线"], sort: 77, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "keyboard", label: "键盘", group: "现有情况", type: "select", options: ["无", "无线", "有线"], sort: 78, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "speaker", label: "加装音箱", group: "现有情况", type: "select", options: ["无", "立式", "条式"], sort: 79, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "install_date", label: "安装日期", group: "现有情况", type: "month", sort: 80, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "thermometer", label: "体温计", group: "现有情况", type: "select", options: ["无", "有"], sort: 81, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "thermometer_model", label: "体温计型号", group: "现有情况", type: "text", sort: 82, filterable: 0, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "department", label: "级部", group: "2026暑期更新计划", type: "select", options: ["小学", "初中", "高中"], sort: 90, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "plan_screen", label: "计划屏幕", group: "2026暑期更新计划", type: "checkbox", sort: 100, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "plan_board", label: "计划书写板", group: "2026暑期更新计划", type: "checkbox", sort: 110, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "plan_audio", label: "计划教师扩声", group: "2026暑期更新计划", type: "checkbox", sort: 120, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "plan_recording", label: "计划录播", group: "2026暑期更新计划", type: "checkbox", sort: 130, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom"] },
+  { key: "repair_date", label: "维修日期", group: "维修记录", type: "text", sort: 150, filterable: 1, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "repair_detail", label: "维修明细", group: "维修记录", type: "textarea", sort: 160, filterable: 0, editable: 1, publicApi: 0, categories: ["classroom", "teacher", "office"] },
+  { key: "repair_warranty", label: "该次维护保修期", group: "维修记录", type: "text", sort: 170, filterable: 0, editable: 1, publicApi: 1, categories: ["classroom", "teacher", "office"] },
+  { key: "inspection_note", label: "巡查备注", group: "巡查", type: "textarea", sort: 200, filterable: 0, editable: 1, publicApi: 0, categories: ["classroom", "teacher", "office"] }
 ];
 
 export function initDb() {
@@ -68,6 +76,7 @@ export function initDb() {
       editable INTEGER NOT NULL DEFAULT 1,
       required INTEGER NOT NULL DEFAULT 0,
       public_api INTEGER NOT NULL DEFAULT 0,
+      categories_json TEXT,
       created_at TEXT NOT NULL DEFAULT (${nowSql})
     );
 
@@ -191,6 +200,43 @@ export function initDb() {
       updated_at TEXT NOT NULL DEFAULT (${nowSql})
     );
 
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      model TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '全新',
+      quantity INTEGER NOT NULL DEFAULT 1,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (${nowSql}),
+      updated_at TEXT NOT NULL DEFAULT (${nowSql})
+    );
+
+    CREATE TABLE IF NOT EXISTS equipment_registry (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      model TEXT NOT NULL DEFAULT '',
+      holder TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '在用',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (${nowSql}),
+      updated_at TEXT NOT NULL DEFAULT (${nowSql})
+    );
+
+    CREATE TABLE IF NOT EXISTS equipment_transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      equipment_id INTEGER NOT NULL REFERENCES equipment_registry(id) ON DELETE CASCADE,
+      from_holder TEXT NOT NULL DEFAULT '',
+      from_location TEXT NOT NULL DEFAULT '',
+      to_holder TEXT NOT NULL DEFAULT '',
+      to_location TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      actor_id INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (${nowSql})
+    );
+
     CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
       ON user_sessions(expires_at);
 
@@ -212,12 +258,16 @@ export function initDb() {
   seedUsers();
   migrateDoorFields();
   backfillClassroomHistory();
+  backfillClassroomAssetCodes();
 }
 
 function migrateSchema() {
   addColumnIfMissing("users", "deleted_at", "TEXT");
   addColumnIfMissing("field_definitions", "public_api", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing("field_definitions", "categories_json", "TEXT");
   addColumnIfMissing("classrooms", "client_request_id", "TEXT");
+  addColumnIfMissing("classrooms", "category", "TEXT NOT NULL DEFAULT 'classroom'");
+  addColumnIfMissing("classrooms", "asset_code", "TEXT");
   addColumnIfMissing("classroom_photos", "client_request_id", "TEXT");
   addColumnIfMissing("change_requests", "client_request_id", "TEXT");
   addColumnIfMissing("user_sessions", "user_id", "INTEGER");
@@ -241,9 +291,9 @@ function addColumnIfMissing(table, column, definition) {
 function seedFields() {
   const stmt = db.prepare(`
     INSERT INTO field_definitions
-      (key, label, group_name, type, options_json, sort_order, filterable, editable, required, public_api)
+      (key, label, group_name, type, options_json, sort_order, filterable, editable, required, public_api, categories_json)
     VALUES
-      (@key, @label, @group, @type, @options, @sort, @filterable, @editable, @required, @publicApi)
+      (@key, @label, @group, @type, @options, @sort, @filterable, @editable, @required, @publicApi, @categories)
     ON CONFLICT(key) DO UPDATE SET
       label = excluded.label,
       group_name = excluded.group_name,
@@ -253,7 +303,8 @@ function seedFields() {
       filterable = excluded.filterable,
       editable = excluded.editable,
       required = excluded.required,
-      public_api = excluded.public_api
+      public_api = excluded.public_api,
+      categories_json = excluded.categories_json
   `);
 
   const insertMany = db.transaction(() => {
@@ -261,6 +312,7 @@ function seedFields() {
       stmt.run({
         ...field,
         options: JSON.stringify(field.options || []),
+        categories: field.categories ? JSON.stringify(field.categories) : null,
         filterable: field.filterable || 0,
         editable: field.editable ?? 1,
         required: field.required || 0,
@@ -316,7 +368,7 @@ function migrateDoorFields() {
 export function getFields() {
   return db.prepare(`
     SELECT key, label, group_name AS "group", type, options_json, sort_order AS sort,
-           filterable, editable, required, public_api AS publicApi
+           filterable, editable, required, public_api AS publicApi, categories_json
     FROM field_definitions
     ORDER BY sort_order, id
   `).all().map((field) => ({
@@ -325,8 +377,34 @@ export function getFields() {
     filterable: Boolean(field.filterable),
     editable: Boolean(field.editable),
     required: Boolean(field.required),
-    publicApi: Boolean(field.publicApi)
+    publicApi: Boolean(field.publicApi),
+    categories: field.categories_json ? JSON.parse(field.categories_json) : null
   }));
+}
+
+const ASSET_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+export function generateAssetCode(prefix = "AS") {
+  const bytes = crypto.randomBytes(6);
+  let suffix = "";
+  for (const byte of bytes) suffix += ASSET_CODE_ALPHABET[byte % ASSET_CODE_ALPHABET.length];
+  return `${prefix}-${suffix}`;
+}
+
+function backfillClassroomAssetCodes() {
+  const rows = db.prepare("SELECT id FROM classrooms WHERE asset_code IS NULL OR asset_code = ''").all();
+  if (!rows.length) return;
+  const exists = db.prepare("SELECT id FROM classrooms WHERE asset_code = ?");
+  const update = db.prepare("UPDATE classrooms SET asset_code = ? WHERE id = ?");
+  db.transaction(() => {
+    for (const row of rows) {
+      let code;
+      do {
+        code = generateAssetCode("AS");
+      } while (exists.get(code));
+      update.run(code, row.id);
+    }
+  })();
 }
 
 export function logAudit(actorId, action, targetType, targetId, detail = {}) {

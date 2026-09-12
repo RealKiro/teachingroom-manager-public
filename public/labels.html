@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>资产标签打印 · 校园设备资产管理系统</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f7fa;
+      color: #17202a;
+    }
+    header.page {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p.muted { margin: 0; color: #667085; font-size: 13px; }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    select, button {
+      font: inherit;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #d9e1ea;
+      background: #fff;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #1769aa;
+      color: #fff;
+      border-color: #1769aa;
+    }
+    #itemList {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 8px;
+      margin: 14px 0;
+    }
+    .itemPick {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      border: 1px solid #d9e1ea;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .itemPick input { width: 16px; height: 16px; }
+    .itemPick .code { color: #1769aa; font-weight: 600; }
+    .itemPick .loc { color: #667085; }
+    #labelSheet {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .label {
+      background: #fff;
+      border: 1px dashed #9fb0c3;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      page-break-inside: avoid;
+    }
+    .label img, .label svg {
+      width: 84px;
+      height: 84px;
+      flex-shrink: 0;
+    }
+    .label .info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      font-size: 12px;
+      color: #475467;
+    }
+    .label .info strong { font-size: 14px; color: #17202a; }
+    .label .info .code {
+      font-family: "Courier New", monospace;
+      font-weight: 700;
+      color: #1769aa;
+      letter-spacing: 0.5px;
+    }
+    .label .info .scanHint { font-size: 10.5px; color: #98a2b3; }
+    #message {
+      background: #fff;
+      border: 1px solid #d9e1ea;
+      border-radius: 10px;
+      padding: 24px;
+      text-align: center;
+      color: #667085;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      header.page, #itemList, .controls { display: none !important; }
+      .label {
+        width: 50mm;
+        height: 30mm;
+        border: 1px solid #000;
+        border-radius: 4px;
+        padding: 4px;
+        break-inside: avoid;
+      }
+      .label img, .label svg { width: 26mm; height: 26mm; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <div>
+      <h1>资产标签打印</h1>
+      <p class="muted">勾选需要打印的资产，生成二维码标签贴在设备上，扫码即可查询台账状态</p>
+    </div>
+    <div class="controls">
+      <select id="categoryFilter">
+        <option value="">全部类别</option>
+        <option value="classroom">班级教室</option>
+        <option value="teacher">教师</option>
+        <option value="office">办公室</option>
+        <option value="equipment">设备登记</option>
+      </select>
+      <button id="printButton" class="primary" type="button">打印标签</button>
+      <a href="/" style="font-size: 13px;">返回系统</a>
+    </div>
+  </header>
+
+  <div id="message">正在加载资产数据…</div>
+  <div id="itemList" hidden></div>
+  <div id="labelSheet"></div>
+
+  <script type="module">
+    const state = { items: [] };
+    const message = document.querySelector("#message");
+    const itemList = document.querySelector("#itemList");
+    const labelSheet = document.querySelector("#labelSheet");
+    const categoryFilter = document.querySelector("#categoryFilter");
+    const CATEGORY_LABELS = { classroom: "班级教室", teacher: "教师", office: "办公室", equipment: "设备" };
+
+    async function requestJson(url, method = "GET", body) {
+      const options = { method, headers: {} };
+      if (body !== undefined) {
+        options.headers["content-type"] = "application/json";
+        options.body = JSON.stringify(body);
+      }
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const contentType = response.headers.get("content-type") || "";
+      return contentType.includes("application/json") ? response.json() : response.text();
+    }
+
+    function labelTarget(item) {
+      return `${window.location.origin}/scan.html?code=${encodeURIComponent(item.assetCode)}`;
+    }
+
+    function renderLabels() {
+      const selected = state.items.filter((item) => item.checked);
+      labelSheet.replaceChildren(...selected.map((item) => {
+        const card = document.createElement("div");
+        card.className = "label";
+        const img = document.createElement("img");
+        img.alt = item.assetCode;
+        img.src = `/api/qrcode?text=${encodeURIComponent(labelTarget(item))}`;
+        const info = document.createElement("div");
+        info.className = "info";
+        info.innerHTML = `
+          <strong>${escapeHtml(item.title)}</strong>
+          <span class="code">${escapeHtml(item.assetCode)}</span>
+          <span>${escapeHtml(item.location || "未填写位置")}</span>
+          <span>${escapeHtml(CATEGORY_LABELS[item.kind || item.category] || "")}</span>
+          <span class="scanHint">扫码查看资产状态</span>
+        `;
+        card.append(img, info);
+        return card;
+      }));
+    }
+
+    function renderPicker() {
+      message.hidden = true;
+      itemList.hidden = false;
+      const visible = state.items.filter((item) => !categoryFilter.value || item.kind === categoryFilter.value);
+      itemList.replaceChildren(...visible.map((item) => {
+        const pick = document.createElement("label");
+        pick.className = "itemPick";
+        pick.innerHTML = `
+          <input type="checkbox" ${item.checked ? "checked" : ""} />
+          <span><span class="code">${escapeHtml(item.assetCode)}</span> ${escapeHtml(item.title)}</span>
+          <span class="loc">${escapeHtml(item.location || "")}</span>
+        `;
+        pick.querySelector("input").addEventListener("change", (event) => {
+          item.checked = event.target.checked;
+          renderLabels();
+        });
+        return pick;
+      }));
+      renderLabels();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function init() {
+      let session;
+      try {
+        session = await requestJson("/api/session");
+      } catch {
+        message.textContent = "无法连接系统，请确认服务已启动";
+        return;
+      }
+      if (!session.user || session.user.role !== "admin") {
+        message.innerHTML = `标签打印需要管理员身份。<a href="/">前往系统登录</a>`;
+        return;
+      }
+      try {
+        const [classrooms, equipment] = await Promise.all([
+          requestJson("/api/classrooms"),
+          requestJson("/api/equipment")
+        ]);
+        state.items = [
+          ...(classrooms.records || [])
+            .filter((record) => record.assetCode)
+            .map((record) => ({
+              kind: record.category || "classroom",
+              assetCode: record.assetCode,
+              title: record.category === "teacher"
+                ? record.values.room
+                : `${record.values.building || ""} ${record.values.room || ""}`.trim(),
+              location: record.values.building || "",
+              checked: false
+            })),
+          ...(equipment.data || []).map((item) => ({
+            kind: "equipment",
+            assetCode: item.asset_code,
+            title: item.name,
+            location: item.location || item.holder || "",
+            checked: false
+          }))
+        ];
+        if (!state.items.length) {
+          message.textContent = "暂无带资产编码的数据，请先在系统中新增台账或登记设备";
+          return;
+        }
+        renderPicker();
+      } catch (error) {
+        message.textContent = `资产数据加载失败：${error.message}`;
+      }
+    }
+
+    categoryFilter.addEventListener("change", renderPicker);
+    document.querySelector("#printButton").addEventListener("click", () => {
+      if (!labelSheet.children.length) {
+        alert("请先勾选需要打印的资产");
+        return;
+      }
+      window.print();
+    });
+
+    init();
+  </script>
+</body>
+</html>

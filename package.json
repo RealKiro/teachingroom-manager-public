@@ -16,7 +16,8 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-session": "^1.18.2",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "qrcode": "^1.5.4"
   },
   "overrides": {
     "brace-expansion": "5.0.8",

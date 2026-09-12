@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>资产查询 · 校园设备资产管理系统</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #eef3f8, #dce7f2);
+      color: #17202a;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 12px 40px rgba(23, 32, 42, 0.12);
+      padding: 24px;
+    }
+    .eyebrow {
+      margin: 0 0 4px;
+      font-size: 12px;
+      letter-spacing: 1px;
+      color: #1769aa;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0 0 2px; font-size: 20px; }
+    .code {
+      font-family: "Courier New", monospace;
+      font-weight: 700;
+      color: #1769aa;
+      font-size: 14px;
+      margin: 0 0 14px;
+    }
+    .kind {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #e6f1fa;
+      color: #1769aa;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .summary { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; }
+    .summary div {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 14px;
+      border-bottom: 1px dashed #e4eaf1;
+      padding-bottom: 8px;
+    }
+    .summary span { color: #667085; flex-shrink: 0; }
+    .summary strong { font-weight: 600; text-align: right; word-break: break-all; }
+    .updated { font-size: 12px; color: #98a2b3; margin: 0 0 14px; }
+    a.home {
+      display: block;
+      text-align: center;
+      padding: 10px;
+      background: #1769aa;
+      color: #fff;
+      border-radius: 10px;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .error {
+      text-align: center;
+      color: #bd2c2c;
+      font-size: 14px;
+      margin: 8px 0 14px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <p class="eyebrow">Campus Asset Management</p>
+    <h1>资产状态查询</h1>
+    <div id="content"><p class="muted">正在查询…</p></div>
+    <a href="/" id="homeLink">打开资产管理系统</a>
+  </main>
+
+  <script type="module">
+    const content = document.querySelector("#content");
+    const code = new URLSearchParams(window.location.search).get("code") || "";
+    const CATEGORY_LABELS = { classroom: "班级教室", teacher: "教师", office: "办公室", equipment: "设备登记" };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function render(data) {
+      const summary = (data.summary || [])
+        .map((item) => `<div><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
+        .join("");
+      content.innerHTML = `
+        <span class="kind">${escapeHtml(CATEGORY_LABELS[data.category || data.kind] || "资产")}</span>
+        <h1>${escapeHtml(data.title)}</h1>
+        <p class="code">${escapeHtml(data.assetCode || "")}</p>
+        <div class="summary">${summary || '<div><span>暂无登记信息</span><strong></strong></div>'}</div>
+        <p class="updated">数据更新时间：${escapeHtml(data.updatedAt || "未知")}</p>
+      `;
+    }
+
+    function renderError(message) {
+      content.innerHTML = `<p class="error">${escapeHtml(message)}</p>`;
+    }
+
+    async function init() {
+      if (!code) {
+        renderError("缺少资产编码，请重新扫描二维码");
+        return;
+      }
+      try {
+        const response = await fetch(`/api/scan/${encodeURIComponent(code)}`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          renderError(data.error || "查询失败");
+          return;
+        }
+        render(data);
+      } catch {
+        renderError("网络异常，请稍后重试");
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 [中文](./DEVELOPMENT.md)
 
-This document describes the architecture, data model, storage and deployment adaptation, frontend behavior, development constraints, and maintenance workflow for TeachingRoom Manager.
+This document describes the architecture, data model, storage and deployment adaptation, frontend behavior, development constraints, and maintenance workflow for the Campus Equipment Asset Management System.
 
 ## Goal
 
@@ -154,6 +154,9 @@ audit_logs
 classroom_history
 user_sessions
 app_backups (serverless-mode backup dump table only)
+inventory_items (spare parts inventory)
+equipment_registry (equipment registry with unique asset_code)
+equipment_transfers (equipment transfer history)
 ```
 
 Classroom fields are stored as key/value rows so new fields can be added without changing the main `classrooms` table.

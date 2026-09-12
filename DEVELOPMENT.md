@@ -2,7 +2,7 @@
 
 [English](./DEVELOPMENT.en.md)
 
-本文说明教室设备管理系统的架构、数据模型、存储与部署适配、前端行为、开发约束和维护流程。
+本文说明校园设备资产管理系统的架构、数据模型、存储与部署适配、前端行为、开发约束和维护流程。
 
 ## 目标
 
@@ -154,6 +154,9 @@ audit_logs
 classroom_history
 user_sessions
 app_backups（仅无服务器模式的备份转储表）
+inventory_items（备件库存）
+equipment_registry（设备登记，含唯一资产编码 asset_code）
+equipment_transfers（设备转移记录）
 ```
 
 教室字段以 key/value 形式保存，因此新增字段时不需要修改 `classrooms` 主表结构。

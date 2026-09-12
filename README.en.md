@@ -1,4 +1,4 @@
-# TeachingRoom Manager
+# Campus Equipment Asset Management System
 
 [中文](./README.md)
 
@@ -6,7 +6,7 @@
   <img src="docs/banner.svg" alt="TeachingRoom Manager — turn classroom equipment spreadsheets into an auditable, backed-up online system" width="960" />
 </div>
 
-TeachingRoom Manager is a lightweight browser-based classroom equipment data system.
+Campus Equipment Asset Management System (TeachingRoom Manager) is a lightweight browser-based asset data system for campus classrooms, teachers, and offices.
 
 The repository includes `初始化数据表格（虚拟）.xlsx` for first-run demonstrations. It contains synthetic data only; the application supports classroom inventory, inspection updates, review workflows, Excel import/export, audit logs, rollback, backups, and read-only base-data integration.
 
@@ -26,6 +26,10 @@ The app is designed for small internal teams, so the runtime stays simple: Node.
 - Import demonstration records from the synthetic Excel template on first startup.
 - Responsive desktop table view and mobile/tablet card view.
 - Quick filtering by building, department, update plan, pending review state, and keyword.
+- Ledger supports multiple categories: classrooms, teachers, and offices.
+- Built-in fields cover mouse/keyboard (wireless/wired), speakers (tower/soundbar/custom), thermometer and model, repair date/detail/warranty; super administrators can add custom fields.
+- Spare parts inventory (name, model, location, quantity, custom status) and equipment registry (holder, location, status) with transfer history.
+- Unique asset codes with printable QR labels; scanning the QR opens a public status page without login.
 - Super administrator, administrator, and inspector roles; inspection submissions go through cross-review before official data is updated.
 - Per-classroom configuration history: old/new field values, submitter, reviewer, photos, and rollback events, displayed in Beijing time.
 - Single approved-change rollback and cross-type point-in-time rollback for fields, classrooms, and photos.
