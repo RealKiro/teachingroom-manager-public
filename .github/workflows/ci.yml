@@ -86,7 +86,7 @@ jobs:
             -H 'content-type: application/json' \
             -d '{"username":"admin","password":"ci-workers-password"}'
           check "fields" 'building' -b /tmp/cookies http://127.0.0.1:8787/api/fields
-          check "create-classroom" '"created"' -b /tmp/cookies -X POST http://127.0.0.1:8787/api/classrooms \
+          check "create-classroom" 'X101' -b /tmp/cookies -X POST http://127.0.0.1:8787/api/classrooms \
             -H 'content-type: application/json' \
             -d '{"values":{"building":"X栋","room":"X101"},"clientRequestId":"ci-workers-classroom-01"}'
           check "create-backup" 'teachingroom-' -b /tmp/cookies -X POST http://127.0.0.1:8787/api/backups

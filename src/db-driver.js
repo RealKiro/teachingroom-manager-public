@@ -255,7 +255,11 @@ function splitStatements(sql) {
 
 function createDoSqliteCompat(storage) {
   const sqlApi = () => storage.sql;
-  const supportsStorageTx = typeof storage.transaction === "function";
+  // DO SQLite 禁止在 sql.exec 中执行 BEGIN/SAVEPOINT 语句，必须使用 storage 的事务 API；
+  // SQLite-backed DO 提供 transactionSync（同步回调），异步 transaction 作为后备
+  const storageTxMethod = typeof storage.transactionSync === "function"
+    ? "transactionSync"
+    : (typeof storage.transaction === "function" ? "transaction" : null);
 
   function query(sql, params = []) {
     const cursor = params.length
@@ -311,29 +315,16 @@ function createDoSqliteCompat(storage) {
       return (...args) => {
         db._txDepth = (db._txDepth || 0) + 1;
         const depth = db._txDepth;
-        const runNested = () => {
-          try {
-            if (depth > 1) sqlApi().exec(`SAVEPOINT sp${depth}`);
-            const result = fn(...args);
-            if (depth > 1) sqlApi().exec(`RELEASE SAVEPOINT sp${depth}`);
-            return result;
-          } catch (error) {
-            if (depth > 1) {
-              try { sqlApi().exec(`ROLLBACK TO SAVEPOINT sp${depth}`); } catch { /* 保持主错误 */ }
-            }
-            throw error;
-          }
-        };
         try {
-          if (depth === 1 && supportsStorageTx) {
-            return storage.transaction(() => runNested());
+          if (depth === 1 && storageTxMethod) {
+            return storage[storageTxMethod](() => fn(...args));
           }
           if (depth === 1) sqlApi().exec("BEGIN");
-          const result = runNested();
+          const result = fn(...args);
           if (depth === 1) sqlApi().exec("COMMIT");
           return result;
         } catch (error) {
-          if (depth === 1 && !supportsStorageTx) {
+          if (depth === 1 && !storageTxMethod) {
             try { sqlApi().exec("ROLLBACK"); } catch { /* 保持主错误 */ }
           }
           throw error;
