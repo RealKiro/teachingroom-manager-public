@@ -64,16 +64,33 @@ jobs:
       - name: Smoke test API
         run: |
           set -e
-          curl -fsS http://127.0.0.1:8787/api/health | grep -q '"ok":true'
-          curl -fsS -c /tmp/cookies -X POST http://127.0.0.1:8787/api/login \
+          check() {
+            local desc="$1"; shift
+            local pattern="$1"; shift
+            local body
+            if ! body=$(curl -fsS "$@" 2>&1); then
+              echo "::error::$desc request failed"
+              echo "$body" | head -40
+              tail -60 wrangler-dev.log
+              exit 1
+            fi
+            echo "$desc => $body" | head -c 400; echo
+            echo "$body" | grep -q "$pattern" || {
+              echo "::error::$desc response missing pattern: $pattern"
+              tail -60 wrangler-dev.log
+              exit 1
+            }
+          }
+          check "health" '"ok":true' http://127.0.0.1:8787/api/health
+          check "login" '"username":"admin"' -c /tmp/cookies -X POST http://127.0.0.1:8787/api/login \
             -H 'content-type: application/json' \
-            -d '{"username":"admin","password":"ci-workers-password"}' | grep -q '"username":"admin"'
-          curl -fsS -b /tmp/cookies http://127.0.0.1:8787/api/fields | grep -q 'building'
-          curl -fsS -b /tmp/cookies -X POST http://127.0.0.1:8787/api/classrooms \
+            -d '{"username":"admin","password":"ci-workers-password"}'
+          check "fields" 'building' -b /tmp/cookies http://127.0.0.1:8787/api/fields
+          check "create-classroom" '"created"' -b /tmp/cookies -X POST http://127.0.0.1:8787/api/classrooms \
             -H 'content-type: application/json' \
-            -d '{"values":{"building":"X栋","room":"X101"},"clientRequestId":"ci-workers-classroom-01"}' | grep -q '"created"'
-          curl -fsS -b /tmp/cookies -X POST http://127.0.0.1:8787/api/backups | grep -q 'teachingroom-'
-          curl -fsS -b /tmp/cookies http://127.0.0.1:8787/api/backups | grep -q 'manual'
+            -d '{"values":{"building":"X栋","room":"X101"},"clientRequestId":"ci-workers-classroom-01"}'
+          check "create-backup" 'teachingroom-' -b /tmp/cookies -X POST http://127.0.0.1:8787/api/backups
+          check "list-backups" 'manual' -b /tmp/cookies http://127.0.0.1:8787/api/backups
           echo "Workers smoke test passed"
 
       - name: Print wrangler logs on failure
