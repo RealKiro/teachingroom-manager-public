@@ -151,6 +151,22 @@ const el = {
   transferLocation: document.querySelector("#transferLocation"),
   transferReason: document.querySelector("#transferReason"),
   transferSubmitButton: document.querySelector("#transferSubmitButton"),
+  repairButton: document.querySelector("#repairButton"),
+  repairDialog: document.querySelector("#repairDialog"),
+  repairSearch: document.querySelector("#repairSearch"),
+  repairStatusFilter: document.querySelector("#repairStatusFilter"),
+  repairRows: document.querySelector("#repairRows"),
+  repairManualForm: document.querySelector("#repairManualForm"),
+  repairReporterName: document.querySelector("#repairReporterName"),
+  repairReporterContact: document.querySelector("#repairReporterContact"),
+  repairUrgency: document.querySelector("#repairUrgency"),
+  repairType: document.querySelector("#repairType"),
+  repairHandler: document.querySelector("#repairHandler"),
+  repairLocation: document.querySelector("#repairLocation"),
+  repairDescription: document.querySelector("#repairDescription"),
+  repairSaveButton: document.querySelector("#repairSaveButton"),
+  repairResetButton: document.querySelector("#repairResetButton"),
+  repairToggleFormButton: document.querySelector("#repairToggleFormButton"),
   submitCreateClassroomButton: document.querySelector("#submitCreateClassroomButton"),
   passwordDialog: document.querySelector("#passwordDialog"),
   selfUsernameInput: document.querySelector("#selfUsernameInput"),
@@ -237,6 +253,14 @@ function bindEvents() {
   el.equipmentResetButton.addEventListener("click", equipmentResetForm);
   el.transferSubmitButton.addEventListener("click", submitEquipmentTransfer);
   el.labelsButton.addEventListener("click", openLabelPrinter);
+  el.repairButton.addEventListener("click", openRepairManager);
+  el.repairSearch.addEventListener("input", debounce(() => loadRepairs(), 200));
+  el.repairStatusFilter.addEventListener("change", loadRepairs);
+  el.repairSaveButton.addEventListener("click", saveRepairRequest);
+  el.repairResetButton.addEventListener("click", resetRepairForm);
+  el.repairToggleFormButton.addEventListener("click", () => {
+    el.repairManualForm.hidden = !el.repairManualForm.hidden;
+  });
   el.submitPasswordButton.addEventListener("click", changeOwnPassword);
   el.auditButton.addEventListener("click", openAuditLog);
   el.backupButton.addEventListener("click", openBackupManager);
@@ -353,6 +377,7 @@ function renderAuth() {
   el.auditButton.style.display = canManageSystem ? "" : "none";
   el.backupButton.style.display = canManageSystem ? "" : "none";
   el.userButton.style.display = canManageSystem ? "" : "none";
+  el.repairButton.style.display = "";
   el.inventoryButton.style.display = state.user.role === "admin" ? "" : "none";
   el.equipmentButton.style.display = state.user.role === "admin" ? "" : "none";
   el.labelsButton.style.display = state.user.role === "admin" ? "" : "none";
@@ -1990,4 +2015,92 @@ async function submitEquipmentTransfer() {
 
 function openLabelPrinter() {
   window.open("/labels.html", "_blank");
+}
+
+// ---- 设备报修（企微同步数据 + 手动补录） ----
+
+const REPAIR_STATUS_FLOW = ["委托处理", "已处理", "已反馈"];
+
+async function openRepairManager() {
+  el.repairDialog.showModal();
+  el.repairManualForm.hidden = state.user?.role !== "admin";
+  await loadRepairs();
+}
+
+async function loadRepairs() {
+  const params = new URLSearchParams();
+  params.set("search", el.repairSearch.value.trim());
+  params.set("status", el.repairStatusFilter.value);
+  const result = await requestJson(`/api/repairs?${params.toString()}`);
+  state.repairs = result.data || [];
+  renderRepairRows();
+}
+
+function repairLedgerText(row) {
+  if (!row.ledger_id) return row.ledger_matched === 1 ? "自动匹配失败" : "未关联台账";
+  return [row.ledger_building, row.ledger_room].filter(Boolean).join(" ") || `台账 #${row.ledger_id}`;
+}
+
+function renderRepairRows() {
+  const canManage = state.user?.role === "admin";
+  const rows = state.repairs.map((row) => {
+    const item = document.createElement("div");
+    item.className = "assetRow";
+    const nextStatus = REPAIR_STATUS_FLOW[REPAIR_STATUS_FLOW.indexOf(row.status) + 1];
+    item.innerHTML = `
+      <div class="assetMain">
+        <strong>${escapeHtml(row.reporter_name || "未知报修人")} · ${escapeHtml(row.location || "未填写地点")}</strong>
+        <span>${escapeHtml([row.urgency, row.repair_type, row.description].filter(Boolean).join(" · "))}</span>
+        <span class="repairMeta">${escapeHtml(row.submitted_at || "")} · ${escapeHtml(repairLedgerText(row))}${row.source === "huijiaoyun" ? " · 企微同步" : " · 手动补录"}</span>
+      </div>
+      <div class="assetSide">
+        ${badge(row.status, row.status === "委托处理" ? "warn" : "ok")}
+        ${canManage && nextStatus ? `<button type="button" data-action="advance">标记${nextStatus}</button>` : ""}
+      </div>
+    `;
+    item.querySelector('[data-action="advance"]')?.addEventListener("click", async () => {
+      await requestJson(`/api/repairs/${row.id}`, "PATCH", { status: nextStatus });
+      showToast(`已标记为「${nextStatus}」`);
+      await loadRepairs();
+    });
+    return item;
+  });
+  el.repairRows.replaceChildren(...rows.length
+    ? rows
+    : [Object.assign(document.createElement("div"), { className: "assetEmpty", textContent: "暂无报修记录" })]);
+}
+
+function resetRepairForm() {
+  el.repairReporterName.value = "";
+  el.repairReporterContact.value = "";
+  el.repairUrgency.value = "";
+  el.repairType.value = "";
+  el.repairHandler.value = "";
+  el.repairLocation.value = "";
+  el.repairDescription.value = "";
+}
+
+async function saveRepairRequest() {
+  const payload = {
+    reporterName: el.repairReporterName.value.trim(),
+    reporterContact: el.repairReporterContact.value.trim(),
+    urgency: el.repairUrgency.value.trim() || "一般",
+    repairType: el.repairType.value.trim(),
+    handler: el.repairHandler.value.trim(),
+    location: el.repairLocation.value.trim(),
+    description: el.repairDescription.value.trim()
+  };
+  if (!payload.reporterName || !payload.location || !payload.description) {
+    showToast("报修人、报修地点、报修描述不能为空");
+    return;
+  }
+  el.repairSaveButton.disabled = true;
+  try {
+    await requestJson("/api/repairs", "POST", payload);
+    showToast("报修单已补录");
+    resetRepairForm();
+    await loadRepairs();
+  } finally {
+    el.repairSaveButton.disabled = false;
+  }
 }

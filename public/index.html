@@ -35,6 +35,7 @@
             <span id="networkStatus" class="networkStatus" role="status" aria-live="polite">正在连接</span>
             <span id="userLabel">未登录</span>
             <span id="roleLabel">角色</span>
+            <button id="repairButton" type="button">设备报修</button>
             <button id="passwordButton" type="button">修改密码</button>
             <button id="auditButton" type="button">操作记录</button>
             <button id="backupButton" type="button">数据库备份</button>
@@ -495,6 +496,46 @@
         <footer>
           <button value="cancel" type="submit" formnovalidate>取消</button>
           <button id="transferSubmitButton" class="primary" type="button">确认转移</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="repairDialog">
+      <form id="repairForm" method="dialog">
+        <header>
+          <div>
+            <h2>设备报修</h2>
+            <p class="muted">报修单跟踪（含企业微信同步数据），状态：委托处理 → 已处理 → 已反馈</p>
+          </div>
+          <button class="iconButton" value="cancel" type="submit" formnovalidate aria-label="关闭">×</button>
+        </header>
+        <div class="assetToolbar">
+          <input id="repairSearch" type="search" placeholder="搜索报修人、地点、描述" />
+          <select id="repairStatusFilter">
+            <option value="">全部状态</option>
+            <option>委托处理</option>
+            <option>已处理</option>
+            <option>已反馈</option>
+          </select>
+        </div>
+        <div id="repairRows" class="assetRows"></div>
+        <div class="assetForm formGrid" id="repairManualForm" hidden>
+          <input id="repairReporterName" placeholder="报修人 *" required />
+          <input id="repairReporterContact" placeholder="联系方式" />
+          <input id="repairUrgency" placeholder="紧急程度（一般/紧急/特急）" list="repairUrgencyList" />
+          <input id="repairType" placeholder="报修类型" />
+          <input id="repairHandler" placeholder="负责人" />
+          <input id="repairLocation" placeholder="报修地点（尽量与台账一致）" list="repairLocationList" />
+          <input id="repairLedgerSelect" type="hidden" />
+          <textarea id="repairDescription" rows="2" placeholder="报修描述 *" required></textarea>
+          <datalist id="repairUrgencyList"><option>一般</option><option>紧急</option><option>特急</option></datalist>
+          <div class="assetFormActions">
+            <button type="button" id="repairResetButton">清空表单</button>
+            <button type="button" id="repairSaveButton" class="primary">补录报修单</button>
+          </div>
+        </div>
+        <footer>
+          <button id="repairToggleFormButton" type="button">补录报修单</button>
         </footer>
       </form>
     </dialog>

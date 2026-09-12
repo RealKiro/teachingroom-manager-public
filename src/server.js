@@ -1499,6 +1499,165 @@ app.get("/api/equipment/:id/transfers", requireLogin, (req, res) => {
   res.json({ data: rows });
 });
 
+// ---- 设备报修（来源：手动补录 / 企业微信第三方平台同步） ----
+const REPAIR_STATUS_FLOW = ["委托处理", "已处理", "已反馈"];
+
+function matchLedgerByLocation(location) {
+  const text = String(location || "").trim();
+  if (!text) return { ledgerId: null, ledgerMatched: 0 };
+  const classrooms = db.prepare("SELECT id, building, room FROM classrooms").all();
+  const doors = new Map(
+    db.prepare("SELECT classroom_id, value FROM classroom_values WHERE field_key = 'front_door'")
+      .all()
+      .map((row) => [row.classroom_id, row.value])
+  );
+  const hits = classrooms.filter((row) => {
+    const haystack = `${row.building || ""}${row.room || ""}${doors.get(row.id) || ""}`;
+    if (!haystack) return false;
+    return haystack.includes(text) || text.includes(row.room) || (doors.get(row.id) && text.includes(doors.get(row.id)));
+  });
+  if (hits.length === 1) return { ledgerId: hits[0].id, ledgerMatched: 1 };
+  return { ledgerId: null, ledgerMatched: 0 };
+}
+
+function upsertRepairRequest(source, payload = {}) {
+  const externalId = payload.externalId ? String(payload.externalId).trim() : null;
+  if (source !== "manual" && !externalId) {
+    const error = new Error("同步数据缺少报修单编号");
+    error.statusCode = 400;
+    throw error;
+  }
+  const location = String(payload.location || "").trim();
+  const match = matchLedgerByLocation(location);
+  const status = REPAIR_STATUS_FLOW.includes(payload.status) ? payload.status : "委托处理";
+  const submittedAt = String(payload.submittedAt || "").trim() || null;
+  const row = {
+    source,
+    external_id: externalId,
+    reporter_name: String(payload.reporterName || "").trim(),
+    reporter_contact: String(payload.reporterContact || "").trim(),
+    urgency: ["一般", "紧急", "特急"].includes(payload.urgency) ? payload.urgency : "一般",
+    repair_type: String(payload.repairType || "").trim(),
+    handler: String(payload.handler || "").trim(),
+    location,
+    ledger_id: payload.ledgerId ?? match.ledgerId,
+    ledger_matched: payload.ledgerId ? 2 : match.ledgerMatched,
+    description: String(payload.description || "").trim(),
+    status,
+    images_json: JSON.stringify(Array.isArray(payload.images) ? payload.images : []),
+    submitted_at: submittedAt,
+    completed_at: status === "已反馈" ? String(payload.completedAt || "").trim() || null : null
+  };
+  const upsert = db.prepare(`
+    INSERT INTO repair_requests
+      (source, external_id, reporter_name, reporter_contact, urgency, repair_type, handler,
+       location, ledger_id, ledger_matched, description, status, images_json, submitted_at, completed_at)
+    VALUES
+      (@source, @external_id, @reporter_name, @reporter_contact, @urgency, @repair_type, @handler,
+       @location, @ledger_id, @ledger_matched, @description, @status, @images_json, @submitted_at, @completed_at)
+    ON CONFLICT(source, external_id) DO UPDATE SET
+      reporter_name = excluded.reporter_name,
+      reporter_contact = excluded.reporter_contact,
+      urgency = excluded.urgency,
+      repair_type = excluded.repair_type,
+      handler = excluded.handler,
+      location = excluded.location,
+      ledger_id = COALESCE(repair_requests.ledger_id, excluded.ledger_id),
+      ledger_matched = CASE WHEN excluded.ledger_id IS NOT NULL THEN excluded.ledger_matched ELSE repair_requests.ledger_matched END,
+      description = excluded.description,
+      status = excluded.status,
+      images_json = excluded.images_json,
+      submitted_at = excluded.submitted_at,
+      completed_at = excluded.completed_at,
+      updated_at = ${nowSql}
+    RETURNING id
+  `);
+  return upsert.get(row).id;
+}
+
+app.get("/api/repairs", requireLogin, (req, res) => {
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const status = String(req.query.status || "").trim();
+  const ledgerId = Number(req.query.ledgerId) || null;
+  let rows = db.prepare(`
+    SELECT r.*, c.building AS ledger_building, c.room AS ledger_room, c.category AS ledger_category
+    FROM repair_requests r
+    LEFT JOIN classrooms c ON c.id = r.ledger_id
+    ORDER BY r.status = '已反馈', r.submitted_at DESC, r.id DESC
+  `).all();
+  if (status) rows = rows.filter((row) => row.status === status);
+  if (ledgerId) rows = rows.filter((row) => row.ledger_id === ledgerId);
+  if (search) {
+    rows = rows.filter((row) => `${row.reporter_name} ${row.location} ${row.description} ${row.repair_type} ${row.handler}`.toLowerCase().includes(search));
+  }
+  res.json({
+    data: rows.map((row) => ({
+      ...row,
+      images: JSON.parse(row.images_json || "[]"),
+      images_json: undefined
+    }))
+  });
+});
+
+app.post("/api/repairs", requireAdmin, (req, res) => {
+  const id = upsertRepairRequest("manual", req.body || {});
+  logAudit(req.session.user.id, "create_repair_request", "repair_request", id, {
+    location: req.body?.location,
+    description: req.body?.description
+  });
+  res.status(201).json({ data: db.prepare("SELECT * FROM repair_requests WHERE id = ?").get(id) });
+});
+
+app.patch("/api/repairs/:id", requireAdmin, (req, res) => {
+  const repair = db.prepare("SELECT * FROM repair_requests WHERE id = ?").get(Number(req.params.id));
+  if (!repair) return res.status(404).json({ error: "报修单不存在" });
+  const updates = {};
+  if (req.body?.status !== undefined) {
+    if (!REPAIR_STATUS_FLOW.includes(req.body.status)) return res.status(400).json({ error: "报修状态不正确" });
+    updates.status = req.body.status;
+    if (req.body.status === "已反馈") updates.completed_at = formatBeijingDateTime(new Date());
+  }
+  if (req.body?.handler !== undefined) updates.handler = String(req.body.handler).trim();
+  if (req.body?.ledgerId !== undefined) {
+    updates.ledger_id = req.body.ledgerId ? Number(req.body.ledgerId) : null;
+    updates.ledger_matched = req.body.ledgerId ? 2 : 0;
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: "没有需要更新的内容" });
+  const setSql = Object.keys(updates).map((key) => `${key} = @${key}`).join(", ");
+  db.prepare(`UPDATE repair_requests SET ${setSql}, updated_at = ${nowSql} WHERE id = @id`).run({ ...updates, id: repair.id });
+  logAudit(req.session.user.id, "update_repair_request", "repair_request", repair.id, updates);
+  res.json({ data: db.prepare("SELECT * FROM repair_requests WHERE id = ?").get(repair.id) });
+});
+
+app.delete("/api/repairs/:id", requireSuperAdmin, (req, res) => {
+  const repair = db.prepare("SELECT * FROM repair_requests WHERE id = ?").get(Number(req.params.id));
+  if (!repair) return res.status(404).json({ error: "报修单不存在" });
+  db.prepare("DELETE FROM repair_requests WHERE id = ?").run(repair.id);
+  logAudit(req.session.user.id, "delete_repair_request", "repair_request", repair.id, { location: repair.location });
+  res.json({ ok: true });
+});
+
+// 第三方平台（慧教云）报修数据接入：X-Sync-Token 鉴权，支持单条或数组，按 source+externalId 去重
+app.post("/api/integrations/huijiaoyun/repairs", (req, res) => {
+  const syncToken = String(process.env.REPAIR_SYNC_TOKEN || "");
+  if (!syncToken) return res.status(501).json({ error: "报修同步未启用（未配置 REPAIR_SYNC_TOKEN）" });
+  const provided = String(req.get("x-sync-token") || "");
+  if (provided !== syncToken) return res.status(401).json({ error: "同步令牌不正确" });
+  const input = Array.isArray(req.body) ? req.body : [req.body];
+  if (!input.length) return res.status(400).json({ error: "请求体为空" });
+  const ids = [];
+  const failures = [];
+  for (const payload of input) {
+    try {
+      ids.push(upsertRepairRequest("huijiaoyun", payload));
+    } catch (error) {
+      failures.push({ externalId: payload?.externalId ?? null, error: String(error?.message || error) });
+    }
+  }
+  const statusCode = failures.length && !ids.length ? 400 : 200;
+  res.status(statusCode).json({ synced: ids.length, failures });
+});
+
 app.get("/api/audit-logs", requireSuperAdmin, (req, res) => {
   const search = String(req.query.search || "").trim().toLowerCase();
   const action = String(req.query.action || "").trim();

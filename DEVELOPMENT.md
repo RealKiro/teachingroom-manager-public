@@ -157,6 +157,7 @@ app_backups（仅无服务器模式的备份转储表）
 inventory_items（备件库存）
 equipment_registry（设备登记，含唯一资产编码 asset_code）
 equipment_transfers（设备转移记录）
+repair_requests（设备报修单：手动补录 / 慧教云同步，含台账自动匹配）
 ```
 
 教室字段以 key/value 形式保存，因此新增字段时不需要修改 `classrooms` 主表结构。

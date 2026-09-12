@@ -1673,3 +1673,7 @@ dialog footer {
   justify-content: flex-end;
   grid-column: 1 / -1;
 }
+.repairMeta {
+  font-size: 11.5px;
+  color: #98a2b3;
+}

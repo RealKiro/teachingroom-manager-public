@@ -157,6 +157,7 @@ app_backups (serverless-mode backup dump table only)
 inventory_items (spare parts inventory)
 equipment_registry (equipment registry with unique asset_code)
 equipment_transfers (equipment transfer history)
+repair_requests (repair tickets: manual entry / HuiJiaoYun sync, auto-matched to ledger entries)
 ```
 
 Classroom fields are stored as key/value rows so new fields can be added without changing the main `classrooms` table.

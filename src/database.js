@@ -237,6 +237,28 @@ export function initDb() {
       created_at TEXT NOT NULL DEFAULT (${nowSql})
     );
 
+    CREATE TABLE IF NOT EXISTS repair_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      external_id TEXT,
+      reporter_name TEXT NOT NULL DEFAULT '',
+      reporter_contact TEXT NOT NULL DEFAULT '',
+      urgency TEXT NOT NULL DEFAULT '一般',
+      repair_type TEXT NOT NULL DEFAULT '',
+      handler TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      ledger_id INTEGER REFERENCES classrooms(id),
+      ledger_matched INTEGER NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '委托处理',
+      images_json TEXT NOT NULL DEFAULT '[]',
+      submitted_at TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (${nowSql}),
+      updated_at TEXT NOT NULL DEFAULT (${nowSql}),
+      UNIQUE(source, external_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
       ON user_sessions(expires_at);
 

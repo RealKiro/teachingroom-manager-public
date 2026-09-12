@@ -29,6 +29,7 @@ The app is designed for small internal teams, so the runtime stays simple: Node.
 - Ledger supports multiple categories: classrooms, teachers, and offices.
 - Built-in fields cover mouse/keyboard (wireless/wired), speakers (tower/soundbar/custom), thermometer and model, repair date/detail/warranty; super administrators can add custom fields.
 - Spare parts inventory (name, model, location, quantity, custom status) and equipment registry (holder, location, status) with transfer history.
+- Repair tracking: syncs repair tickets from the WeCom third-party repair app (HuiJiaoYun) via a token-authenticated ingestion endpoint (dedup by ticket id, auto-matching to ledger entries), or manual entry; status flow pending → processed → feedback.
 - Unique asset codes with printable QR labels; scanning the QR opens a public status page without login.
 - Super administrator, administrator, and inspector roles; inspection submissions go through cross-review before official data is updated.
 - Per-classroom configuration history: old/new field values, submitter, reviewer, photos, and rollback events, displayed in Beijing time.
